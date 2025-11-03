@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <title>HR Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body class="bg-gray-100">
+
+    <!-- 
+      Login Container
+    -->
+    <div id="login-container" class="min-h-screen flex items-center justify-center">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">HR Portal Login</h2>
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="login-email" class="w-full p-3 mt-1 border border-gray-300 rounded-lg" required>
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" id="login-password" class="w-full p-3 mt-1 border border-gray-300 rounded-lg" required>
+                </div>
+                <p id="login-error" class="text-sm text-red-600 mb-4 hidden"></p>
+                <button type="submit" class="w-full py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700">
+                    Login
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 
+      NEW: Super Admin Dashboard
+      (This is the complete HTML)
+    -->
+    <div id="super-admin-container" class="container mx-auto p-8 hidden">
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">
+                Super Admin Dashboard
+            </h1>
+            <button id="logout-button-super" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">
+                Logout
+            </button>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Left Column: Create Company -->
+            <div class="md:col-span-1 bg-white rounded-xl shadow-2xl p-6 h-fit">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">Create New Company</h2>
+                <form id="create-company-form" class="space-y-4">
+                    
+                    <div>
+                        <label for="company-name" class="block text-sm font-medium text-gray-700">Company Name</label>
+                        <input type="text" id="company-name" class="w-full p-3 mt-1 border border-gray-300 rounded-lg" required>
+                    </div>
+                    
+                    <div>
+                        <label for="company-slug" class="block text-sm font-medium text-gray-700">Unique URL Slug (e.g., "globalmax")</label>
+                        <input type="text" id="company-slug" class="w-full p-3 mt-1 border border-gray-300 rounded-lg" required>
+                    </div>
+
+                    <div>
+                        <label for="company-phone" class="block text-sm font-medium text-gray-700">Contact Phone</label>
+                        <input type="tel" id="company-phone" class="w-full p-3 mt-1 border border-gray-300 rounded-lg">
+                    </div>
+
+                    <div>
+                        <label for="company-email" class="block text-sm font-medium text-gray-700">Contact Email</label>
+                        <input type="email" id="company-email" class="w-full p-3 mt-1 border border-gray-300 rounded-lg">
+                    </div>
+
+                    <div>
+                        <label for="company-street" class="block text-sm font-medium text-gray-700">Street</label>
+                        <input type="text" id="company-street" class="w-full p-3 mt-1 border border-gray-300 rounded-lg">
+                    </div>
+
+                    <div>
+                        <label for="company-city" class="block text-sm font-medium text-gray-700">City</label>
+                        <input type="text" id="company-city" class="w-full p-3 mt-1 border border-gray-300 rounded-lg">
+                    </div>
+
+                    <div>
+                        <label for="company-state" class="block text-sm font-medium text-gray-700">State (e.g., "IL")</label>
+                        <input type="text" id="company-state" class="w-full p-3 mt-1 border border-gray-300 rounded-lg" maxlength="2">
+                    </div>
+
+                    <div>
+                        <label for="company-zip" class="block text-sm font-medium text-gray-700">ZIP Code</label>
+                        <input type="text" id="company-zip" class="w-full p-3 mt-1 border border-gray-300 rounded-lg">
+                    </div>
+
+                    <div>
+                        <label for="company-mc" class="block text-sm font-medium text-gray-700">MC Number</label>
+                        <input type="text" id="company-mc" class="w-full p-3 mt-1 border border-gray-300 rounded-lg">
+                    </div>
+
+                    <div>
+                        <label for="company-dot" class="block text-sm font-medium text-gray-700">DOT Number</label>
+                        <input type="text" id="company-dot" class="w-full p-3 mt-1 border border-gray-300 rounded-lg">
+                    </div>
+
+                    <p id="create-company-success" class="text-sm text-green-600 hidden"></p>
+                    <p id="create-company-error" class="text-sm text-red-600 hidden"></p>
+                    
+                    <button type="submit" id="create-company-btn" class="w-full py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">
+                        Create Company
+                    </button>
+                </form>
+            </div>
+
+            <!-- Right Column: Manage Companies & Admins -->
+            <div class="md:col-span-2 space-y-8">
+                <div class="bg-white rounded-xl shadow-2xl p-6">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-4">Manage Companies</h2>
+                    <div id="company-list" class="space-y-4">
+                        <p>Loading companies...</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-2xl p-6">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-4">Manage Company Admins</h2>
+                    <p class="text-sm text-gray-600">
+                        For security, you must create new Company Admin users manually in the
+                        <a href="https://console.firebase.google.com/" target="_blank" class="text-blue-600 hover:underline">Firebase Authentication Console</a>.
+                    </p>
+                    <br>
+                    <p class="text-sm text-gray-600">
+                        After creating a user, you must:
+                        <ol class="list-decimal list-inside ml-4 space-y-1">
+                            <li>Copy their "User UID".</li>
+                            <li>Go to the Firestore "users" collection and click "Add document".</li>
+                            <li>Paste the UID as the "Document ID".</li>
+                            <li>Add these fields:
+                                <ul class="list-disc list-inside ml-6">
+                                    <li>`email`: (their email)</li>
+                                    <li>`role`: "company_admin"</li>
+                                    <li>`companyId`: (the ID of their company, from the list above)</li>
+                                </ul>
+                            </li>
+                        </ol>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 
+      RENAMED: Company Admin Dashboard
+      (This is the complete HTML)
+    -->
+    <div id="company-admin-container" class="container mx-auto p-8 hidden">
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">
+                <span id="company-admin-header">Company Dashboard</span>
+            </h1>
+            <button id="logout-button-company" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">
+                Logout
+            </button>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="bg-white rounded-xl shadow-2xl overflow-hidden">
+            <div class="p-6">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">Submitted Applications</h2>
+                <!-- List of applications will be loaded here -->
+                <div id="application-list" class="space-y-4">
+                    <p>Loading applications...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 
+      UPDATED: Agreement Text Templates
+      (No changes from last time)
+    -->
+    <div id="agreement-templates" class="hidden">
+        <template id="agreement-release">
+            [COMPANY_NAME] is released from all liability in responding to inquiries and releasing information in connection with my application.
+        </template>
+        
+        <template id="agreement-certify">
+            My signature below certifies that this application was completed by me, and that all entries on it and information in it is true and complete to the best of my knowledge.
+        </template>
+        
+        <template id="agreement-auth-psp">
+            I authorize [COMPANY_NAME] ("Prospective Employer") to access the FMCSA Pre-Employment Screening Program (PSP) system to seek information regarding my commercial driving safety record and information regarding my safety inspection history. I understand that I am authorizing the release of safety performance information including crash data from the previous five (5) years and inspection history from the previous three (3) years. I understand and acknowledge that this release of information may assist the Prospective Employer to make a determination regarding my suitability as an employee.
+        </template>
+        
+        <template id="agreement-clearinghouse">
+            I hereby provide consent to [COMPANY_NAME] to conduct a limited query of the FMCSA Commercial Driver's License Drug and Alcohol Clearinghouse (Clearinghouse) to determine whether drug or alcohol violation information about me exists in the Clearinghouse. This limited query may be conducted by [COMPANY_NAME] on a periodic basis throughout my employment and no less than at least once a year.
+        </template>
+    </div>
+
+
+    <!-- 
+      Main JavaScript file
+      We'll increment the cache-busting version
+    -->
+    <script type="module" src="/src/main.js?v=4"></script>
+
+</body>
+</html>
+
