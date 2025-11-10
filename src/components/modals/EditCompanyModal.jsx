@@ -1,0 +1,143 @@
+// src/components/modals/EditCompanyModal.jsx
+import React, { useState, useEffect } from 'react';
+import { updateCompany } from '../../firebase/firestore.js';
+import { X } from 'lucide-react';
+
+export function EditCompanyModal({ companyDoc, onClose, onSave }) {
+  const [formData, setFormData] = useState({});
+  const [originalSlug, setOriginalSlug] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState(''); // 'success' or 'error'
+
+  useEffect(() => {
+    if (companyDoc) {
+      const company = companyDoc.data();
+      setFormData({
+        companyName: company.companyName || '',
+        appSlug: company.appSlug || '',
+        phone: company.contact?.phone || '',
+        email: company.contact?.email || '',
+        street: company.address?.street || '',
+        city: company.address?.city || '',
+        state: company.address?.state || '',
+        zip: company.address?.zip || '',
+        mcNumber: company.legal?.mcNumber || '',
+        dotNumber: company.legal?.dotNumber || '',
+      });
+      setOriginalSlug(company.appSlug || '');
+    }
+  }, [companyDoc]);
+
+  const handleChange = (e) => {
+    const { id, value } = e.target;
+    setFormData(prev => ({ ...prev, [id]: value }));
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    setMessage('');
+    setMessageType('');
+
+    const companyData = {
+      companyName: formData.companyName,
+      appSlug: formData.appSlug.toLowerCase().trim(),
+      address: {
+        street: formData.street, city: formData.city,
+        state: formData.state.toUpperCase(), zip: formData.zip,
+      },
+      contact: { phone: formData.phone, email: formData.email },
+      legal: { mcNumber: formData.mcNumber, dotNumber: formData.dotNumber },
+    };
+
+    try {
+      await updateCompany(companyDoc.id, companyData, originalSlug);
+      setMessage('Successfully saved!');
+      setMessageType('success');
+      await onSave();
+      setTimeout(onClose, 1500);
+    } catch (error) {
+      console.error("Error updating company:", error);
+      setMessage(error.message);
+      setMessageType('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div id="edit-company-modal" className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-200">
+        <header className="p-5 border-b border-gray-200 flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-gray-800">Edit Company</h2>
+          <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </header>
+        
+        <form id="edit-company-form" className="p-5 overflow-y-auto space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+              <input type="text" id="companyName" className="w-full p-3 border border-gray-300 rounded-lg" required value={formData.companyName} onChange={handleChange} />
+            </div>
+            <div>
+              <label htmlFor="appSlug" className="block text-sm font-medium text-gray-700 mb-1">Unique URL Slug</label>
+              <input type="text" id="appSlug" className="w-full p-3 border border-gray-300 rounded-lg" required value={formData.appSlug} onChange={handleChange} />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">Contact Phone</label>
+              <input type="tel" id="phone" className="w-full p-3 border border-gray-300 rounded-lg" value={formData.phone} onChange={handleChange} />
+            </div>
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
+              <input type="email" id="email" className="w-full p-3 border border-gray-300 rounded-lg" value={formData.email} onChange={handleChange} />
+            </div>
+          </div>
+
+          <hr className="my-2" />
+
+          <FormField id="street" label="Street" value={formData.street} onChange={handleChange} />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <FormField id="city" label="City" value={formData.city} onChange={handleChange} />
+            <FormField id="state" label="State" value={formData.state} onChange={handleChange} maxLength="2" />
+            <FormField id="zip" label="ZIP Code" value={formData.zip} onChange={handleChange} />
+          </div>
+
+          <hr className="my-2" />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField id="mcNumber" label="MC Number" value={formData.mcNumber} onChange={handleChange} />
+            <FormField id="dotNumber" label="DOT Number" value={formData.dotNumber} onChange={handleChange} />
+          </div>
+        </form>
+        
+        <footer className="p-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center rounded-b-xl">
+          <p id="edit-company-message" className={`text-sm ${messageType === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+            {message}
+          </p>
+          <div className="flex gap-3">
+            <button className="px-5 py-2 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-all" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-md" onClick={handleSave} disabled={loading}>
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+  
+  function FormField({ id, label, ...props }) {
+    return (
+      <div>
+        <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+        <input id={id} className="w-full p-3 border border-gray-300 rounded-lg" {...props} />
+      </div>
+    );
+  }
+}
