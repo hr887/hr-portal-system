@@ -18,7 +18,7 @@ import { CompaniesView } from './admin/CompaniesView.jsx';
 import { UsersView } from './admin/UsersView.jsx';
 import { CreateView } from './admin/CreateView.jsx';
 import { GlobalSearchResults } from './admin/GlobalSearchResults.jsx';
-import { ApplicationsView } from './admin/ApplicationsView.jsx'; // <-- NEW IMPORT
+import { ApplicationsView } from './admin/ApplicationsView.jsx';
 
 // Import Modals
 import { EditCompanyModal } from './modals/EditCompanyModal.jsx';
@@ -26,7 +26,7 @@ import { DeleteCompanyModal } from './modals/DeleteCompanyModal.jsx';
 import { EditUserModal } from './modals/EditUserModal.jsx';
 import { DeleteUserModal } from './modals/DeleteUserModal.jsx';
 import { ViewCompanyAppsModal } from './modals/ViewCompanyAppsModal.jsx';
-import { ApplicationDetailsModal } from './ApplicationDetailsModal.jsx'; // <-- NEW IMPORT
+import { ApplicationDetailsModal } from './ApplicationDetailsModal.jsx';
 
 
 // --- Reusable NavItem Component ---
@@ -61,7 +61,8 @@ export function SuperAdminDashboard() {
   const [editingUser, setEditingUser] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);
   const [viewingCompanyApps, setViewingCompanyApps] = useState(null); // { id, name }
-  // --- NEW: State for opening the main application modal ---
+  
+  // --- UPDATED: State for opening the main application modal ---
   const [selectedApplication, setSelectedApplication] = useState(null); // { companyId, appId }
 
   // Global Data State
@@ -136,13 +137,25 @@ export function SuperAdminDashboard() {
     }
     
     // Load Applications (Collection Group)
+    // This query is correct. It finds *all* applications nested under companies.
     try {
       const appSnap = await getDocs(collectionGroup(db, 'applications'));
-      const applications = appSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        companyId: doc.ref.parent.parent.id 
-      }));
+      
+      const applications = appSnap.docs.map(doc => {
+        const data = doc.data();
+        const parent = doc.ref.parent.parent; 
+        
+        // If parent exists (it always should now), get companyId from parent.id
+        const companyId = parent ? parent.id : data.companyId; // Fallback just in case
+
+        return {
+          id: doc.id,
+          ...data,
+          companyId: companyId,
+          isNestedApp: true // This is now always true
+        };
+      });
+
       setAllApplications(applications);
       appCount = applications.length;
     } catch (error) {
@@ -210,11 +223,21 @@ export function SuperAdminDashboard() {
     setEditingUser(null);
     setDeletingUser(null);
     setViewingCompanyApps(null);
-    setSelectedApplication(null); // <-- NEW: Close app modal
+    setSelectedApplication(null);
   };
   const refreshAll = () => loadAllData();
 
-  // --- NEW: Render Logic ---
+  // --- UPDATED: No longer needs to pass isNestedApp flag ---
+  const handleAppClick = (app) => {
+    setSelectedApplication({
+      companyId: app.companyId,
+      appId: app.id
+      // isNestedApp prop removed
+    });
+  };
+  // --- End Update ---
+
+  // --- Render Logic ---
   const renderActiveView = () => {
     if (isSearching) {
       return (
@@ -225,8 +248,7 @@ export function SuperAdminDashboard() {
           onViewApps={(company) => setViewingCompanyApps(company)}
           onEditCompany={(id) => openEditCompany(id)}
           onEditUser={(user) => setEditingUser(user)}
-          // --- NEW: Wire up app click ---
-          onAppClick={(companyId, appId) => setSelectedApplication({ companyId, appId })}
+          onAppClick={(app) => handleAppClick(app)}
         />
       );
     }
@@ -255,7 +277,6 @@ export function SuperAdminDashboard() {
             onDelete={(user) => setDeletingUser(user)}
           />
         );
-      // --- NEW: Add Applications page ---
       case 'applications':
         return (
           <ApplicationsView
@@ -263,7 +284,7 @@ export function SuperAdminDashboard() {
             statsError={statsError}
             allApplications={allApplications}
             allCompaniesMap={allCompaniesMap}
-            onAppClick={(companyId, appId) => setSelectedApplication({ companyId, appId })}
+            onAppClick={(app) => handleAppClick(app)}
           />
         );
       case 'create':
@@ -338,7 +359,6 @@ export function SuperAdminDashboard() {
               isActive={activeView === 'users' && !isSearching} 
               onClick={() => { setActiveView('users'); setGlobalSearchQuery(''); }}
             />
-            {/* --- NEW: Add Applications Nav Item --- */}
             <NavItem 
               label="Driver Applications" 
               icon={<FileText size={20} />} 
@@ -375,11 +395,13 @@ export function SuperAdminDashboard() {
       {viewingCompanyApps && (
         <ViewCompanyAppsModal companyId={viewingCompanyApps.id} companyName={viewingCompanyApps.name} onClose={onModalClose} />
       )}
-      {/* --- NEW: Wire up main Application Modal --- */}
+      
+      {/* --- UPDATED: Pass isNestedApp to the modal --- */}
       {selectedApplication && (
         <ApplicationDetailsModal
           companyId={selectedApplication.companyId}
           applicationId={selectedApplication.appId}
+          // --- THIS IS THE FIX: The isNestedApp prop is removed ---
           onClose={onModalClose}
           onStatusUpdate={refreshAll}
         />

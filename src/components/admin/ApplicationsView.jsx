@@ -1,7 +1,7 @@
 // src/components/admin/ApplicationsView.jsx
 import React, { useState, useMemo } from 'react';
 import { getFieldValue, getStatusColor } from '../../utils/helpers.js';
-import { FileText, Search, ArrowDownUp } from 'lucide-react'; // <-- Added ArrowDownUp
+import { FileText, Search, ArrowDownUp } from 'lucide-react';
 
 // --- Reusable Card Component ---
 function Card({ title, icon, children, className = '' }) {
@@ -19,7 +19,7 @@ function Card({ title, icon, children, className = '' }) {
 }
 // ---
 
-// --- NEW: Helper function for sorting ---
+// --- Helper function for sorting ---
 const sortApplications = (apps, config) => {
   const { key, direction } = config;
   
@@ -68,7 +68,6 @@ export function ApplicationsView({
   onAppClick 
 }) {
   const [appSearch, setAppSearch] = useState('');
-  // --- NEW: State for sorting ---
   const [sortConfig, setSortConfig] = useState({ key: 'submittedAt', direction: 'desc' });
 
   const filteredApplications = useMemo(() => {
@@ -94,7 +93,6 @@ export function ApplicationsView({
     
   }, [appSearch, allApplications, allCompaniesMap, sortConfig]);
   
-  // --- NEW: Handler for sorting ---
   const handleSortChange = (e) => {
     const [key, direction] = e.target.value.split(',');
     setSortConfig({ key, direction });
@@ -114,7 +112,6 @@ export function ApplicationsView({
           <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         </div>
         
-        {/* --- NEW: Sort Dropdown --- */}
         <div className="relative w-full sm:w-auto">
           <select
             id="sort-select-super"
@@ -147,7 +144,7 @@ export function ApplicationsView({
             <button 
               key={app.id} 
               className="w-full p-4 border border-gray-200 rounded-lg bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between text-left hover:border-blue-500 hover:shadow-md transition-all"
-              onClick={() => onAppClick(app.companyId, app.id)}
+              onClick={() => onAppClick(app)} // <-- UPDATED: Pass the whole app object
             >
               <div>
                 <h3 className="font-semibold text-lg text-gray-900">{`${getFieldValue(app['firstName'])} ${getFieldValue(app['lastName'])}`}</h3>

@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { httpsCallable } from "firebase/functions";
 import { functions } from '../../firebase/config.js';
-import { createNewCompany } from '../../firebase/firestore.js';
+import { createNewCompany, updateCompany } from '../../firebase/firestore.js'; // <-- Import updateCompany
+import { uploadCompanyLogo } from '../../firebase/storage.js'; // <-- Import uploadCompanyLogo
 import { Plus, UserPlus } from 'lucide-react';
 
 // --- Reusable Card Component ---
@@ -46,6 +47,7 @@ export function CreateView({ allCompaniesMap, onDataUpdate }) {
   const [companyForm, setCompanyForm] = useState({
     name: '', slug: '', phone: '', email: '', street: '', city: '', state: '', zip: '', mc: '', dot: ''
   });
+  const [logoFile, setLogoFile] = useState(null); // <-- NEW: State for logo file
   const [companyFormLoading, setCompanyFormLoading] = useState(false);
   const [companyFormSuccess, setCompanyFormSuccess] = useState('');
   const [companyFormError, setCompanyFormError] = useState('');
@@ -61,29 +63,70 @@ export function CreateView({ allCompaniesMap, onDataUpdate }) {
   const handleCompanyFormChange = (e) => {
     setCompanyForm(prev => ({ ...prev, [e.target.id]: e.target.value }));
   };
+  
+  // --- NEW: Handler for file input ---
+  const handleFileChange = (e) => {
+    if (e.target.files[0]) {
+      setLogoFile(e.target.files[0]);
+    } else {
+      setLogoFile(null);
+    }
+  };
+  
   const handleAdminFormChange = (e) => {
     setAdminForm(prev => ({ ...prev, [e.target.id]: e.target.value }));
   };
 
+  // --- UPDATED: Create Company Handler ---
   const handleCreateCompany = async (e) => {
     e.preventDefault();
     setCompanyFormLoading(true);
     setCompanyFormError('');
     setCompanyFormSuccess('');
+    
+    // 1. Create company data object (without logo URL)
     const companyData = {
-      companyName: companyForm.name, appSlug: companyForm.slug.toLowerCase().trim(),
+      companyName: companyForm.name, 
+      appSlug: companyForm.slug.toLowerCase().trim(),
       address: { street: companyForm.street, city: companyForm.city, state: companyForm.state.toUpperCase(), zip: companyForm.zip },
       contact: { phone: companyForm.phone, email: companyForm.email },
       legal: { mcNumber: companyForm.mc, dotNumber: companyForm.dot },
-      logoUrl: ""
+      companyLogoUrl: "" // Initialize as empty string
     };
+    
+    let newCompanyId = null;
+
     try {
-      await createNewCompany(companyData);
-      setCompanyFormSuccess(`Successfully created ${companyData.companyName}!`);
+      // 2. Create the company document in Firestore
+      const newCompanyRef = await createNewCompany(companyData);
+      newCompanyId = newCompanyRef.id;
+      setCompanyFormSuccess(`Successfully created ${companyData.companyName}.`);
+
+      // 3. If a logo file was provided, upload it
+      if (logoFile) {
+        setCompanyFormSuccess(`Company created. Uploading logo...`);
+        
+        // 4. Upload logo to Storage
+        const downloadURL = await uploadCompanyLogo(newCompanyId, logoFile);
+        
+        // 5. Update the company document with the new logo URL
+        await updateCompany(newCompanyId, { companyLogoUrl: downloadURL });
+        
+        setCompanyFormSuccess(`Successfully created company and uploaded logo!`);
+      }
+
+      // 6. Reset form and refresh parent data
       setCompanyForm({ name: '', slug: '', phone: '', email: '', street: '', city: '', state: '', zip: '', mc: '', dot: '' });
+      setLogoFile(null);
+      document.getElementById('logo').value = null; // Clear file input
       onDataUpdate(); // Tell the parent to refresh all data
+      
     } catch (error) { 
       setCompanyFormError(error.message); 
+      // If company was created but logo upload failed, let user know
+      if (newCompanyId && logoFile) {
+        setCompanyFormError(`Company created, but logo upload failed: ${error.message}`);
+      }
     } finally { 
       setCompanyFormLoading(false); 
     }
@@ -116,6 +159,16 @@ export function CreateView({ allCompaniesMap, onDataUpdate }) {
         <form className="space-y-4" onSubmit={handleCreateCompany}>
           <FormField id="name" label="Company Name" required value={companyForm.name} onChange={handleCompanyFormChange} />
           <FormField id="slug" label="Unique URL Slug" required value={companyForm.slug} onChange={handleCompanyFormChange} />
+          
+          {/* --- NEW: File Input --- */}
+          <FormField 
+            id="logo" 
+            label="Company Logo" 
+            type="file" 
+            onChange={handleFileChange} 
+            accept="image/png, image/jpeg" 
+          />
+          
           <FormField id="phone" label="Contact Phone" type="tel" value={companyForm.phone} onChange={handleCompanyFormChange} />
           <FormField id="email" label="Contact Email" type="email" value={companyForm.email} onChange={handleCompanyFormChange} />
           <FormField id="street" label="Street" value={companyForm.street} onChange={handleCompanyFormChange} />

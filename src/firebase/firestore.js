@@ -15,6 +15,10 @@ import {
 import { httpsCallable } from "firebase/functions";
 
 /**
+ * DELETED: getApplicationRef is no longer needed as all paths are standardized.
+ */
+
+/**
  * Fetches the portal user's data from the 'users' collection.
  * @param {string} userId - The Firebase Auth User ID.
  * @returns {Promise<object|null>} The user's data object or null if not found.
@@ -108,7 +112,7 @@ export async function updateMembershipRole(membershipId, newRole) {
  */
 export async function deleteMembership(membershipId) {
     if (!membershipId) return;
-    const membershipRef = doc(db, "memberships", membershipId); // Corrected collection name
+    const membershipRef = doc(db, "memberships", membershipId);
     return await deleteDoc(membershipRef);
 }
 
@@ -206,21 +210,38 @@ export async function getCompanyProfile(companyId) {
 // --- Company Admin Functions ---
 
 /**
- * Fetches applications for a *specific* companyId.
+ * UPDATED: Fetches applications *only* from the NESTED path.
+ * The complex logic for root/nested merging has been removed.
  * @param {string} companyId - The ID of the company.
- * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
+ * @returns {Promise<Array>} An array of application data.
  */
 export async function loadApplications(companyId) {
     if (!companyId) {
         console.error("No Company ID provided to loadApplications");
-        return null;
+        return [];
     }
-    const applicationsRef = collection(db, "companies", companyId, "applications");
-    return await getDocs(applicationsRef);
+    
+    // 1. ONLY Query for NESTED applications
+    const nestedAppsRef = collection(db, "companies", companyId, "applications");
+    const nestedQuery = query(nestedAppsRef);
+    const nestedSnapshot = await getDocs(nestedQuery);
+
+    // 2. Format and return
+    const appList = [];
+    nestedSnapshot.forEach(doc => {
+        appList.push({
+            id: doc.id,
+            ...doc.data(),
+            isNestedApp: true // Hardcode this flag to true
+        });
+    });
+
+    return appList;
 }
 
 /**
- * Gets a specific application from a specific company.
+ * UPDATED: Gets a specific application.
+ * Removes `isNestedApp` flag and *always* uses the nested path.
  * @param {string} companyId - The ID of the company.
  * @param {string} applicationId - The ID of the application.
  * @returns {Promise<DocumentSnapshot>} The Firestore DocumentSnapshot.
@@ -231,7 +252,8 @@ export async function getApplicationDoc(companyId, applicationId) {
 }
 
 /**
- * Updates the status of a specific application.
+ * UPDATED: Updates the status of a specific application.
+ * Removes `isNestedApp` flag and *always* uses the nested path.
  * @param {string} companyId - The ID of the company.
  * @param {string} applicationId - The ID of the application.
  * @param {string} newStatus - The new status string.
@@ -242,7 +264,8 @@ export async function updateApplicationStatus(companyId, applicationId, newStatu
 }
 
 /**
- * NEW: Updates fields in a specific application document.
+ * UPDATED: Updates fields in a specific application document.
+ * Removes `isNestedApp` flag and *always* uses the nested path.
  * @param {string} companyId - The ID of the company.
  * @param {string} applicationId - The ID of the application.
  * @param {object} data - The fields to update (e.g., { 'first-name': 'John' }).
@@ -253,7 +276,8 @@ export async function updateApplicationData(companyId, applicationId, data) {
 }
 
 /**
- * NEW: Deletes a specific application document.
+ * UPDATED: Deletes a specific application document.
+ * Removes `isNestedApp` flag and *always* uses the nested path.
  * @param {string} companyId - The ID of the company.
  * @param {string} applicationId - The ID of the application.
  */
@@ -263,7 +287,8 @@ export async function deleteApplication(companyId, applicationId) {
 }
 
 /**
- * NEW: Calls a Cloud Function to move an application from one company to another.
+ * UPDATED: Calls a Cloud Function to move an application.
+ * Hardcodes `isSourceNested: true` since all apps are now nested.
  * @param {string} sourceCompanyId - The ID of the company the application is leaving.
  * @param {string} destinationCompanyId - The ID of the company the application is going to.
  * @param {string} applicationId - The ID of the application document.
@@ -273,11 +298,12 @@ export async function moveApplication(sourceCompanyId, destinationCompanyId, app
     if (!sourceCompanyId || !destinationCompanyId || !applicationId) {
         throw new Error("Missing parameters for moving application.");
     }
-    // This is a stub. You must implement 'moveApplication' in your Firebase Cloud Functions.
+    
     const moveApp = httpsCallable(functions, 'moveApplication');
     return await moveApp({
         sourceCompanyId,
         destinationCompanyId,
-        applicationId
+        applicationId,
+        isSourceNested: true // This is now ALWAYS true
     });
 }

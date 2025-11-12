@@ -9,6 +9,7 @@ export function ApplicationStatusManager({
   applicationId,
   currentStatus,
   onStatusUpdate
+  // --- REMOVED: isNestedApp prop ---
 }) {
   const [selectedStatus, setSelectedStatus] = useState(currentStatus);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -18,6 +19,7 @@ export function ApplicationStatusManager({
     setStatusLoading(true);
     setStatusMessage('');
     try {
+      // --- UPDATED: Simplified function call ---
       await updateApplicationStatus(companyId, applicationId, selectedStatus);
       setStatusMessage('Status Saved!');
       onStatusUpdate(selectedStatus); // Pass the new status back to the parent modal

@@ -1,10 +1,12 @@
 // src/components/modals/EditCompanyModal.jsx
 import React, { useState, useEffect } from 'react';
 import { updateCompany } from '../../firebase/firestore.js';
+import { uploadCompanyLogo } from '../../firebase/storage.js'; // <-- Import uploadCompanyLogo
 import { X } from 'lucide-react';
 
 export function EditCompanyModal({ companyDoc, onClose, onSave }) {
   const [formData, setFormData] = useState({});
+  const [logoFile, setLogoFile] = useState(null); // <-- NEW: State for logo file
   const [originalSlug, setOriginalSlug] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -24,6 +26,7 @@ export function EditCompanyModal({ companyDoc, onClose, onSave }) {
         zip: company.address?.zip || '',
         mcNumber: company.legal?.mcNumber || '',
         dotNumber: company.legal?.dotNumber || '',
+        companyLogoUrl: company.companyLogoUrl || '', // <-- NEW: Load existing logo URL
       });
       setOriginalSlug(company.appSlug || '');
     }
@@ -34,28 +37,52 @@ export function EditCompanyModal({ companyDoc, onClose, onSave }) {
     setFormData(prev => ({ ...prev, [id]: value }));
   };
 
+  // --- NEW: Handler for file input ---
+  const handleFileChange = (e) => {
+    if (e.target.files[0]) {
+      setLogoFile(e.target.files[0]);
+    } else {
+      setLogoFile(null);
+    }
+  };
+
+  // --- UPDATED: Save Handler ---
   const handleSave = async () => {
     setLoading(true);
     setMessage('');
     setMessageType('');
 
-    const companyData = {
-      companyName: formData.companyName,
-      appSlug: formData.appSlug.toLowerCase().trim(),
-      address: {
-        street: formData.street, city: formData.city,
-        state: formData.state.toUpperCase(), zip: formData.zip,
-      },
-      contact: { phone: formData.phone, email: formData.email },
-      legal: { mcNumber: formData.mcNumber, dotNumber: formData.dotNumber },
-    };
+    let newLogoUrl = formData.companyLogoUrl; // Start with the existing URL
 
     try {
+      // 1. If a new logo file was provided, upload it first
+      if (logoFile) {
+        setMessage('Uploading logo...');
+        newLogoUrl = await uploadCompanyLogo(companyDoc.id, logoFile);
+      }
+      
+      // 2. Build the final company data object
+      const companyData = {
+        companyName: formData.companyName,
+        appSlug: formData.appSlug.toLowerCase().trim(),
+        address: {
+          street: formData.street, city: formData.city,
+          state: formData.state.toUpperCase(), zip: formData.zip,
+        },
+        contact: { phone: formData.phone, email: formData.email },
+        legal: { mcNumber: formData.mcNumber, dotNumber: formData.dotNumber },
+        companyLogoUrl: newLogoUrl, // Add the logo URL (either old or new)
+      };
+
+      // 3. Update the company document in Firestore
+      setMessage('Saving company data...');
       await updateCompany(companyDoc.id, companyData, originalSlug);
+      
       setMessage('Successfully saved!');
       setMessageType('success');
       await onSave();
       setTimeout(onClose, 1500);
+
     } catch (error) {
       console.error("Error updating company:", error);
       setMessage(error.message);
@@ -77,25 +104,34 @@ export function EditCompanyModal({ companyDoc, onClose, onSave }) {
         
         <form id="edit-company-form" className="p-5 overflow-y-auto space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-              <input type="text" id="companyName" className="w-full p-3 border border-gray-300 rounded-lg" required value={formData.companyName} onChange={handleChange} />
-            </div>
-            <div>
-              <label htmlFor="appSlug" className="block text-sm font-medium text-gray-700 mb-1">Unique URL Slug</label>
-              <input type="text" id="appSlug" className="w-full p-3 border border-gray-300 rounded-lg" required value={formData.appSlug} onChange={handleChange} />
+            <FormField id="companyName" label="Company Name" required value={formData.companyName} onChange={handleChange} />
+            <FormField id="appSlug" label="Unique URL Slug" required value={formData.appSlug} onChange={handleChange} />
+          </div>
+          
+          {/* --- NEW: Logo Upload/Preview --- */}
+          <div>
+            <label htmlFor="logo" className="block text-sm font-medium text-gray-700 mb-1">Company Logo</label>
+            <div className="flex items-center gap-4">
+              {formData.companyLogoUrl && (
+                <img 
+                  src={formData.companyLogoUrl} 
+                  alt="Current Logo" 
+                  className="w-16 h-16 object-contain rounded-lg border border-gray-200 p-1 bg-gray-50"
+                />
+              )}
+              <input 
+                type="file" 
+                id="logo" 
+                className="w-full p-3 border border-gray-300 rounded-lg" 
+                onChange={handleFileChange} 
+                accept="image/png, image/jpeg" 
+              />
             </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">Contact Phone</label>
-              <input type="tel" id="phone" className="w-full p-3 border border-gray-300 rounded-lg" value={formData.phone} onChange={handleChange} />
-            </div>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
-              <input type="email" id="email" className="w-full p-3 border border-gray-300 rounded-lg" value={formData.email} onChange={handleChange} />
-            </div>
+            <FormField id="phone" label="Contact Phone" type="tel" value={formData.phone} onChange={handleChange} />
+            <FormField id="email" label="Contact Email" type="email" value={formData.email} onChange={handleChange} />
           </div>
 
           <hr className="my-2" />

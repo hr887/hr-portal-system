@@ -73,26 +73,20 @@ export function CompanyAdminDashboard() {
   // --- State for sorting ---
   const [sortConfig, setSortConfig] = useState({ key: 'submittedAt', direction: 'desc' });
   
-  const [selectedAppId, setSelectedAppId] = useState(null);
+  // --- UPDATED: State now holds the full app object ---
+  const [selectedApp, setSelectedApp] = useState(null);
 
   const companyId = currentCompanyProfile?.id;
   const companyName = currentCompanyProfile?.companyName;
 
+  // --- UPDATED: To handle the new array from firestore.js ---
   async function refreshApplicationList(companyId) {
     if (!companyId) return;
     setLoading(true);
     setError('');
     try {
-      const querySnapshot = await loadApplications(companyId);
-      if (!querySnapshot || querySnapshot.empty) {
-        setApplications([]);
-      } else {
-        const appList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setApplications(appList);
-      }
+      const appList = await loadApplications(companyId); // This now returns an array
+      setApplications(appList);
     } catch (err) {
       console.error("Error loading applications: ", err);
       setError("Could not load applications.");
@@ -107,7 +101,7 @@ export function CompanyAdminDashboard() {
     }
   }, [companyId]);
   
-  // --- UPDATED: Memoized filtering AND sorting ---
+  // --- Memoized filtering AND sorting ---
   const filteredApplications = useMemo(() => {
     const searchTerm = searchQuery.toLowerCase();
     
@@ -133,7 +127,7 @@ export function CompanyAdminDashboard() {
     setSortConfig({ key, direction });
   };
   
-  // --- NEW: Calculate Stat Card numbers ---
+  // --- Calculate Stat Card numbers ---
   const leadsCount = useMemo(() => {
     return applications.filter(app => 
       app.status === 'New Application' || app.status === 'Pending Review'
@@ -198,7 +192,7 @@ export function CompanyAdminDashboard() {
 
         <main className="container mx-auto p-4 sm:p-8">
           
-          {/* --- UPDATED: Stat Cards --- */}
+          {/* --- Stat Cards --- */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatCard title="Leads" value={leadsCount} icon={<Users size={20}/>} />
             <StatCard title="Application" value={applications.length} icon={<FileText size={20}/>} />
@@ -286,7 +280,7 @@ export function CompanyAdminDashboard() {
                     return (
                       <tr 
                         key={app.id} 
-                        onClick={() => setSelectedAppId(app.id)} 
+                        onClick={() => setSelectedApp(app)} // <-- This correctly passes the full app object
                         className="hover:bg-gray-50 cursor-pointer"
                       >
                         <td className="px-5 py-4 whitespace-nowrap">
@@ -306,7 +300,7 @@ export function CompanyAdminDashboard() {
                         <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-600">
                           {getFieldValue(app['signature-date'])}
                         </td>
-                        <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-5 py-4 whitespace-nowP text-sm text-gray-600">
                           Prospect
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-600">
@@ -322,12 +316,13 @@ export function CompanyAdminDashboard() {
         </main>
       </div>
 
-      {/* Render the modal if an application is selected */}
-      {selectedAppId && (
+      {/* --- UPDATED: Render the modal using the new state object --- */}
+      {selectedApp && (
         <ApplicationDetailsModal
           companyId={companyId}
-          applicationId={selectedAppId}
-          onClose={() => setSelectedAppId(null)}
+          applicationId={selectedApp.id}
+          // --- THIS IS THE FIX: The isNestedApp prop is removed ---
+          onClose={() => setSelectedApp(null)}
           onStatusUpdate={handleAppUpdate}
         />
       )}

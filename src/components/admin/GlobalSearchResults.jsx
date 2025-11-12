@@ -9,7 +9,8 @@ export function GlobalSearchResults({
   allCompaniesMap,
   onViewApps,
   onEditCompany,
-  onEditUser
+  onEditUser,
+  onAppClick // <-- NEW: Accept the onAppClick prop
 }) {
   const { companies, users, applications } = results;
 
@@ -78,9 +79,14 @@ export function GlobalSearchResults({
         <div className="space-y-4">
           {applications.length > 0 ? (
             applications.map(app => (
-              <div key={app.id} className="p-4 border border-gray-200 rounded-lg bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between">
+              // --- UPDATED: This is now a button that passes the app object ---
+              <button 
+                key={app.id} 
+                className="w-full p-4 border border-gray-200 rounded-lg bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between text-left hover:border-blue-500 hover:shadow-md transition-all"
+                onClick={() => onAppClick(app)} // <-- Pass the whole app object
+              >
                 <div>
-                  <h3 className="font-semibold text-lg text-gray-900">{`${getFieldValue(app['first-name'])} ${getFieldValue(app['last-name'])}`}</h3>
+                  <h3 className="font-semibold text-lg text-gray-900">{`${getFieldValue(app['firstName'])} ${getFieldValue(app['lastName'])}`}</h3>
                   <p className="text-sm text-gray-600">{getFieldValue(app.email)}</p>
                   <p className="text-sm text-gray-500 mt-1">
                     From: <span className="font-medium text-gray-700">{allCompaniesMap.get(app.companyId) || 'Unknown Company'}</span>
@@ -89,7 +95,7 @@ export function GlobalSearchResults({
                 <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(app.status || 'New Application')}`}>
                   {app.status || 'New Application'}
                 </span>
-              </div>
+              </button>
             ))
           ) : <p className="text-gray-500 p-4 bg-white rounded-lg border">No driver applications found.</p>}
         </div>

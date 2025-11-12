@@ -205,6 +205,7 @@ export function ApplicationInfo({
   applicationId,
   currentStatus,
   handleStatusUpdate
+  // --- REMOVED: isNestedApp prop ---
 }) {
   const data = appData;
   const yesNoOptions = [{value: 'yes', label: 'Yes'}, {value: 'no', label: 'No'}];
@@ -349,6 +350,7 @@ export function ApplicationInfo({
           applicationId={applicationId}
           currentStatus={currentStatus}
           onStatusUpdate={handleStatusUpdate}
+          // --- REMOVED: isNestedApp prop ---
         />
       )}
     </div>

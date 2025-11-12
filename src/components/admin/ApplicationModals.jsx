@@ -5,7 +5,13 @@ import { loadCompanies, deleteApplication, moveApplication } from '../../firebas
 import { AlertTriangle, ArrowRight, X } from 'lucide-react';
 
 // --- Move Application Modal ---
-export function MoveApplicationModal({ sourceCompanyId, applicationId, onClose, onMoveComplete }) {
+export function MoveApplicationModal({ 
+  sourceCompanyId, 
+  applicationId, 
+  onClose, 
+  onMoveComplete
+  // --- REMOVED: isSourceNested prop ---
+}) {
   const [loading, setLoading] = useState(true);
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [destinationCompanyId, setDestinationCompanyId] = useState('');
@@ -42,8 +48,12 @@ export function MoveApplicationModal({ sourceCompanyId, applicationId, onClose, 
     setMessageType('');
 
     try {
-      // This is the call to the Cloud Function
-      const result = await moveApplication(sourceCompanyId, destinationCompanyId, applicationId);
+      // --- UPDATED: Simplified function call ---
+      const result = await moveApplication(
+        sourceCompanyId, 
+        destinationCompanyId, 
+        applicationId
+      );
       setMessage(`Successfully moved to ${availableCompanies.find(c => c.id === destinationCompanyId).name}!`);
       setMessageType('success');
       // Wait for success message, then close
@@ -113,7 +123,14 @@ export function MoveApplicationModal({ sourceCompanyId, applicationId, onClose, 
 
 
 // --- Delete Confirmation Modal ---
-export function DeleteConfirmModal({ appName, companyId, applicationId, onClose, onDeletionComplete }) {
+export function DeleteConfirmModal({ 
+  appName, 
+  companyId, 
+  applicationId, 
+  onClose, 
+  onDeletionComplete
+  // --- REMOVED: isNestedApp prop ---
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -121,6 +138,7 @@ export function DeleteConfirmModal({ appName, companyId, applicationId, onClose,
     setLoading(true);
     setError('');
     try {
+      // --- UPDATED: Simplified function call ---
       await deleteApplication(companyId, applicationId); 
       onDeletionComplete();
     } catch (err) {
