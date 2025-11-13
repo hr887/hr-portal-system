@@ -15,10 +15,6 @@ import {
 import { httpsCallable } from "firebase/functions";
 
 /**
- * DELETED: getApplicationRef is no longer needed as all paths are standardized.
- */
-
-/**
  * Fetches the portal user's data from the 'users' collection.
  * @param {string} userId - The Firebase Auth User ID.
  * @returns {Promise<object|null>} The user's data object or null if not found.
@@ -243,7 +239,7 @@ export async function loadApplications(companyId) {
  * UPDATED: Gets a specific application.
  * Removes `isNestedApp` flag and *always* uses the nested path.
  * @param {string} companyId - The ID of the company.
- * @param {string} applicationId - The ID of the application.
+ *a * @param {string} applicationId - The ID of the application.
  * @returns {Promise<DocumentSnapshot>} The Firestore DocumentSnapshot.
  */
 export async function getApplicationDoc(companyId, applicationId) {
@@ -306,4 +302,33 @@ export async function moveApplication(sourceCompanyId, destinationCompanyId, app
         applicationId,
         isSourceNested: true // This is now ALWAYS true
     });
+}
+
+
+// --- NEW FUNCTIONS FOR TEAM MANAGEMENT ---
+
+/**
+ * Fetches all memberships for a specific company.
+ * @param {string} companyId - The ID of the company.
+ * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
+ */
+export async function getMembershipsForCompany(companyId) {
+    if (!companyId) return null;
+    const membershipsRef = collection(db, "memberships");
+    const q = query(membershipsRef, where("companyId", "==", companyId));
+    return await getDocs(q);
+}
+
+/**
+ * Fetches user documents based on a list of user IDs.
+ * @param {string[]} userIds - An array of user document IDs.
+ * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
+ */
+export async function getUsersFromIds(userIds) {
+    if (!userIds || userIds.length === 0) {
+        return null;
+    }
+    const userRef = collection(db, "users");
+    const q = query(userRef, where(documentId(), "in", userIds));
+    return await getDocs(q);
 }

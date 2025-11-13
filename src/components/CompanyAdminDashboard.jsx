@@ -3,8 +3,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../App.jsx';
 import { loadApplications } from '../firebase/firestore.js';
 import { getFieldValue, getStatusColor } from '../utils/helpers.js';
-import { ApplicationDetailsModal } from './ApplicationDetailsModal.jsx';
-import { LogOut, ArrowLeft, Search, Filter, ChevronDown, Users, FileText, CheckSquare, Bell, ArrowDownUp } from 'lucide-react';
+import { ApplicationDetailView } from './ApplicationDetailView.jsx'; 
+import { auth } from '../firebase/config.js'; 
+import { getPortalUser } from '../firebase/firestore.js'; 
+import { ManageTeamModal } from './ManageTeamModal.jsx';
+import { LogOut, ArrowLeft, Search, ChevronDown, Users, FileText, CheckSquare, Bell, ArrowDownUp, AlertTriangle, User, ChevronUp, UserPlus, Replace } from 'lucide-react';
+
 
 // --- Reusable Stat Card Component ---
 function StatCard({ title, value, icon }) {
@@ -18,6 +22,16 @@ function StatCard({ title, value, icon }) {
         <p className="text-3xl font-bold text-gray-900">{value}</p>
       </div>
     </div>
+  );
+}
+
+// --- Reusable Red Flag Badge Component ---
+function FlagBadge({ text }) {
+  return (
+    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold">
+      <AlertTriangle size={12} />
+      {text}
+    </span>
   );
 }
 
@@ -64,28 +78,48 @@ const sortApplications = (apps, config) => {
 
 // --- Main Dashboard Component ---
 export function CompanyAdminDashboard() {
-  const { currentCompanyProfile, handleLogout, returnToCompanyChooser } = useData();
+  // --- 1. GET currentUserClaims ---
+  const { currentCompanyProfile, handleLogout, returnToCompanyChooser, currentUserClaims } = useData();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // --- State for sorting ---
   const [sortConfig, setSortConfig] = useState({ key: 'submittedAt', direction: 'desc' });
-  
-  // --- UPDATED: State now holds the full app object ---
   const [selectedApp, setSelectedApp] = useState(null);
+
+  const [userName, setUserName] = useState('Admin User');
+  const [userEmail, setUserEmail] = useState('');
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
 
   const companyId = currentCompanyProfile?.id;
   const companyName = currentCompanyProfile?.companyName;
 
-  // --- UPDATED: To handle the new array from firestore.js ---
+  // --- 2. THIS IS THE FIX ---
+  // Get the user's role from their CLAIMS, not the company profile
+  const isCompanyAdmin = currentUserClaims?.roles[companyId] === 'company_admin';
+  // --- END FIX ---
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        setUserEmail(user.email);
+        const portalUserDoc = await getPortalUser(user.uid);
+        if (portalUserDoc && portalUserDoc.name) {
+          setUserName(portalUserDoc.name);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   async function refreshApplicationList(companyId) {
     if (!companyId) return;
     setLoading(true);
     setError('');
     try {
-      const appList = await loadApplications(companyId); // This now returns an array
+      const appList = await loadApplications(companyId); 
       setApplications(appList);
     } catch (err) {
       console.error("Error loading applications: ", err);
@@ -101,7 +135,6 @@ export function CompanyAdminDashboard() {
     }
   }, [companyId]);
   
-  // --- Memoized filtering AND sorting ---
   const filteredApplications = useMemo(() => {
     const searchTerm = searchQuery.toLowerCase();
     
@@ -111,23 +144,19 @@ export function CompanyAdminDashboard() {
       return name.includes(searchTerm) || phone.includes(searchTerm);
     });
     
-    // Now, sort the filtered list
     return sortApplications(filtered, sortConfig);
     
   }, [searchQuery, applications, sortConfig]);
   
-  // This function is passed down to the modal so it can refresh this list
   const handleAppUpdate = () => {
     refreshApplicationList(companyId);
   }
   
-  // --- Handler for sorting ---
   const handleSortChange = (e) => {
     const [key, direction] = e.target.value.split(',');
     setSortConfig({ key, direction });
   };
   
-  // --- Calculate Stat Card numbers ---
   const leadsCount = useMemo(() => {
     return applications.filter(app => 
       app.status === 'New Application' || app.status === 'Pending Review'
@@ -145,12 +174,31 @@ export function CompanyAdminDashboard() {
       app.status === 'Approved'
     ).length;
   }, [applications]);
-  // --- End Stat Card calculations ---
+  
+  const getApplicantFlags = (app) => {
+    const flags = [];
+    if (!app) return flags;
+    
+    if (app['drug-test-positive'] === 'yes') {
+      flags.push('Failed Drug Test');
+    }
+    if (app['revoked-licenses'] === 'yes') {
+      flags.push('Revoked License');
+    }
+    if (app['driving-convictions'] === 'yes') {
+        flags.push('Driving Convictions');
+    }
+    if (app.accidents && Array.isArray(app.accidents) && app.accidents.some(a => a.preventable === 'yes')) {
+      flags.push('Preventable Accident');
+    }
+    
+    return flags;
+  };
 
   return (
     <>
-      <div id="company-admin-container" className="min-h-screen bg-gray-50">
-        <header className="sticky top-0 z-10 bg-white shadow-sm border-b border-gray-200">
+      <div id="company-admin-container" className="h-screen bg-gray-50 flex flex-col">
+        <header className="sticky top-0 z-30 bg-white shadow-sm border-b border-gray-200 shrink-0">
           <div className="container mx-auto p-4 flex justify-between items-center">
             {/* Header Left Side */}
             <div>
@@ -160,69 +208,96 @@ export function CompanyAdminDashboard() {
               <p className="text-sm text-gray-500">Applications Portal</p>
             </div>
             
-            {/* Header Right Side */}
-            <div className="flex items-center gap-3">
-              <button 
-                title="Switch Company"
-                className="px-3 py-2 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-all flex items-center gap-2"
-                onClick={returnToCompanyChooser}
+            {/* Header Right Side (NEW DROPDOWN) */}
+            <div className="relative">
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                <ArrowLeft size={18} />
-                <span className="hidden sm:inline">Switch</span>
-              </button>
-              <button 
-                title="Logout"
-                className="px-3 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-all flex items-center gap-2"
-                onClick={handleLogout}
-              >
-                <LogOut size={18} />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
-              <div className="w-px h-8 bg-gray-300 mx-2"></div>
-              <div className="flex items-center gap-3">
-                 <img src="https://placehold.co/40x40/60A5FA/FFF?text=A" alt="User Avatar" className="w-10 h-10 rounded-full border-2 border-gray-300" />
-                 <div className="hidden sm:block">
-                    <p className="font-semibold text-gray-800">Admin User</p>
-                    <p className="text-xs text-gray-500">admin@company.com</p>
+                 <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-lg">
+                   {userName.charAt(0).toUpperCase()}
                  </div>
-              </div>
+                 <div className="hidden sm:block text-left">
+                    <p className="font-semibold text-gray-800">{userName}</p>
+                    <p className="text-xs text-gray-500">{userEmail}</p>
+                 </div>
+                 {isUserMenuOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </button>
+              
+              {/* --- The Dropdown Menu --- */}
+              {isUserMenuOpen && (
+                <div 
+                  className="absolute top-full right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+                  onClick={() => setIsUserMenuOpen(false)} // Close on click
+                >
+                  <div className="p-4 border-b border-gray-200">
+                    <p className="font-semibold text-gray-800">{userName}</p>
+                    <p className="text-sm text-gray-500">{userEmail}</p>
+                  </div>
+                  <nav className="p-2">
+                    {isCompanyAdmin && (
+                      <button 
+                        onClick={() => setIsAddUserModalOpen(true)}
+                        className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md text-gray-700 hover:bg-gray-100"
+                      >
+                        <UserPlus size={16} />
+                        Manage Team / Add User
+                      </button>
+                    )}
+                    <button 
+                      onClick={returnToCompanyChooser}
+                      className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md text-gray-700 hover:bg-gray-100"
+                    >
+                      <Replace size={16} />
+                      Switch Company
+                    </button>
+                    <button 
+                      onClick={handleLogout}
+                      className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md text-red-600 hover:bg-red-50"
+                    >
+                      <LogOut size={16} />
+                      Logout
+                    </button>
+                  </nav>
+                </div>
+              )}
             </div>
           </div>
         </header>
 
-        <main className="container mx-auto p-4 sm:p-8">
-          
+        <div className="container mx-auto p-4 sm:p-8 shrink-0">
           {/* --- Stat Cards --- */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard title="Leads" value={leadsCount} icon={<Users size={20}/>} />
             <StatCard title="Application" value={applications.length} icon={<FileText size={20}/>} />
             <StatCard title="Qualification" value={qualificationCount} icon={<CheckSquare size={20}/>} />
             <StatCard title="Onboarding" value={onboardingCount} icon={<Bell size={20}/>} />
           </div>
+        </div>
 
-          {/* --- Main Application Table --- */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-            <div className="p-5 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-700">Applicants</h2>
-              <p className="text-sm text-gray-500">{applications.length} total applicants</p>
-            </div>
-
-            {/* Toolbar with Sorting */}
-            <div className="p-5 flex flex-col sm:flex-row gap-4 justify-between items-center border-b border-gray-200">
-              <div className="relative w-full sm:max-w-xs">
-                <input
-                  type="text"
-                  placeholder="Search by name or phone..."
-                  className="w-full p-3 pl-10 border border-gray-300 rounded-lg"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <main className="container mx-auto px-4 sm:px-8 pb-8 grid grid-cols-1 lg:grid-cols-12 gap-8 overflow-hidden flex-1 min-h-0">
+          
+          {/* --- Left Column: Applicant List --- */}
+          <div className="lg:col-span-5 xl:col-span-4 flex flex-col min-h-0">
+            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden flex-1 flex flex-col h-full">
+              <div className="p-5 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-700">Applicants</h2>
+                <p className="text-sm text-gray-500">{applications.length} total applicants</p>
               </div>
-              <div className="flex gap-3 w-full sm:w-auto">
-                
-                {/* Sort Dropdown */}
-                <div className="relative w-full sm:w-auto">
+
+              {/* Toolbar with Sorting */}
+              <div className="p-5 flex flex-col sm:flex-row gap-4 justify-between items-center border-b border-gray-200 shrink-0">
+                <div className="relative w-full">
+                  <input
+                    type="text"
+                    placeholder="Search by name or phone..."
+                    className="w-full p-3 pl-10 border border-gray-300 rounded-lg"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                </div>
+                <div className="relative w-full sm:w-auto shrink-0">
                   <select
                     id="sort-select"
                     className="w-full sm:w-auto px-4 py-3 pl-10 border border-gray-300 rounded-lg shadow-sm text-gray-700 font-semibold bg-white appearance-none"
@@ -232,98 +307,98 @@ export function CompanyAdminDashboard() {
                     <option value="submittedAt,desc">Newest First</option>
                     <option value="submittedAt,asc">Oldest First</option>
                     <option value="name,asc">Name (A-Z)</option>
-                    <option value="name,desc">Name (Z-A)</option>
-                    <option value="dob,asc">Date of Birth (Asc)</option>
-                    <option value="dob,desc">Date of Birth (Desc)</option>
-                    <option value="state,asc">State (A-Z)</option>
-                    <option value="state,desc">State (Z-A)</option>
+                    {/* ... other options */}
                   </select>
                   <ArrowDownUp size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 </div>
-                
-                <button className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md font-semibold flex items-center gap-2 justify-center">
-                  Actions <ChevronDown size={16} />
-                </button>
               </div>
-            </div>
-            
-            {/* Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-max">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    <th className="px-5 py-3">Applicant Name</th>
-                    <th className="px-5 py-3">Contact</th>
-                    <th className="px-5 py-3">Position</th>
-                    <th className="px-5 py-3">Application Date</th>
-                    <th className="px-5 py-3">Stage</th>
-                    <th className="px-5 py-3">Location</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {loading && (
-                    <tr><td colSpan="6" className="p-5 text-center text-gray-500">Loading applications...</td></tr>
-                  )}
-                  {error && (
-                    <tr><td colSpan="6" className="p-5 text-center text-red-600">{error}</td></tr>
-                  )}
-                  {!loading && !error && filteredApplications.length === 0 && (
-                    <tr>
-                      <td colSpan="6" className="p-5 text-center text-gray-500">
-                        {searchQuery ? "No applications found matching your search." : "No applications found."}
-                      </td>
+              
+              {/* Table */}
+              <div className="overflow-y-auto flex-1 min-h-0">
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-gray-50 z-10">
+                    <tr className="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      <th className="px-5 py-3">Applicant Name</th>
+                      <th className="px-5 py-3">Stage</th>
                     </tr>
-                  )}
-                  {!loading && !error && filteredApplications.map(app => {
-                    const currentStatus = app.status || 'New Application';
-                    const name = `${getFieldValue(app['firstName'])} ${getFieldValue(app['lastName'])}`;
-                    return (
-                      <tr 
-                        key={app.id} 
-                        onClick={() => setSelectedApp(app)} // <-- This correctly passes the full app object
-                        className="hover:bg-gray-50 cursor-pointer"
-                      >
-                        <td className="px-5 py-4 whitespace-nowrap">
-                          <p className="font-semibold text-gray-900">{name}</p>
-                          <p className="text-sm text-blue-600 hover:underline">Go to applicant &rarr;</p>
-                        </td>
-                        <td className="px-5 py-4 whitespace-nowrap">
-                          <p className="text-sm text-gray-800">{getFieldValue(app.phone)}</p>
-                          <p className="text-sm text-gray-500">{getFieldValue(app.email)}</p>
-                        </td>
-                        <td className="px-5 py-4 whitespace-nowrap">
-                          <p className="text-sm text-gray-800">Truck Driver</p>
-                          <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(currentStatus)}`}>
-                            {currentStatus}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {getFieldValue(app['signature-date'])}
-                        </td>
-                        <td className="px-5 py-4 whitespace-nowP text-sm text-gray-600">
-                          Prospect
-                        </td>
-                        <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {getFieldValue(app.state)}
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {loading && (
+                      <tr><td colSpan="2" className="p-5 text-center text-gray-500">Loading applications...</td></tr>
+                    )}
+                    {error && (
+                      <tr><td colSpan="2" className="p-5 text-center text-red-600">{error}</td></tr>
+                    )}
+                    {!loading && !error && filteredApplications.length === 0 && (
+                      <tr>
+                        <td colSpan="2" className="p-5 text-center text-gray-500">
+                          {searchQuery ? "No applications found matching your search." : "No applications found."}
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    )}
+                    {!loading && !error && filteredApplications.map(app => {
+                      const currentStatus = app.status || 'New Application';
+                      const name = `${getFieldValue(app['firstName'])} ${getFieldValue(app['lastName'])}`;
+                      const appFlags = getApplicantFlags(app);
+                      const isSelected = selectedApp?.id === app.id;
+
+                      return (
+                        <tr 
+                          key={app.id} 
+                          onClick={() => setSelectedApp(app)}
+                          className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                        >
+                          <td className="px-5 py-4 whitespace-nowrap">
+                            <p className={`font-semibold ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>{name}</p>
+                            <p className="text-sm text-gray-500">{getFieldValue(app.phone)}</p>
+                            
+                            {appFlags.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {appFlags.map(flag => <FlagBadge key={flag} text={flag} />)}
+                              </div>
+                            )}
+                            
+                          </td>
+                          <td className="px-5 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(currentStatus)}`}>
+                              {currentStatus}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
+
+          {/* --- Right Column: Application Details --- */}
+          <div className="lg:col-span-7 xl:col-span-8 min-h-0">
+            {selectedApp ? (
+              <ApplicationDetailView
+                key={selectedApp.id}
+                companyId={companyId}
+                applicationId={selectedApp.id}
+                onClosePanel={() => setSelectedApp(null)}
+                onStatusUpdate={handleAppUpdate}
+                // --- 3. PASS THE CORRECT PROP ---
+                isCompanyAdmin={isCompanyAdmin} 
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center bg-white rounded-xl shadow-lg border border-gray-200">
+                <p className="text-gray-500 font-medium">Select an applicant to view their details</p>
+              </div>
+            )}
+          </div>
+
         </main>
       </div>
 
-      {/* --- UPDATED: Render the modal using the new state object --- */}
-      {selectedApp && (
-        <ApplicationDetailsModal
-          companyId={companyId}
-          applicationId={selectedApp.id}
-          // --- THIS IS THE FIX: The isNestedApp prop is removed ---
-          onClose={() => setSelectedApp(null)}
-          onStatusUpdate={handleAppUpdate}
+      {isAddUserModalOpen && (
+        <ManageTeamModal 
+          companyId={companyId} 
+          onClose={() => setIsAddUserModalOpen(false)} 
         />
       )}
     </>
