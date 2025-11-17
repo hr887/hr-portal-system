@@ -188,4 +188,118 @@ exports.moveApplication = onCall(async (request) => {
     console.error("Error moving application:", error);
     throw new HttpsError("internal", error.message);
   }
+  /**
+ * =================================================================
+ * onApplicationSubmitted
+ * =================================================================
+ * This function triggers AFTER a new application is created in any
+ * company's subcollection.
+ *
+ * It automatically creates a "master profile" for the driver
+ * and pre-fills it with their application data.
+ */
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+
+exports.onApplicationSubmitted = onDocumentCreated("companies/{companyId}/applications/{applicationId}", async (event) => {
+  const snapshot = event.data;
+  if (!snapshot) {
+    console.log("No data associated with the event");
+    return;
+  }
+  const appData = snapshot.data();
+  const appEmail = appData.email;
+  const appPhone = appData.phone;
+
+  if (!appEmail) {
+    console.log(`Application ${snapshot.id} has no email. Skipping profile creation.`);
+    return;
+  }
+
+  const db = admin.firestore();
+  
+  // 1. Check if a driver profile with this email *already* exists.
+  const driversRef = db.collection("drivers");
+  const existingDriverQuery = await driversRef.where("personalInfo.email", "==", appEmail).limit(1).get();
+
+  if (!existingDriverQuery.empty) {
+    console.log(`Driver profile for ${appEmail} already exists. Skipping creation.`);
+    // TODO: In the future, we could *update* their profile with this new data.
+    return;
+  }
+
+  // 2. If no profile exists, create a new one.
+  console.log(`Creating new driver profile for ${appEmail}...`);
+  let newDriverAuthUser;
+  try {
+    // 3. Create a new "passwordless" user in Firebase Authentication
+    newDriverAuthUser = await admin.auth().createUser({
+      email: appEmail,
+      emailVerified: true, // We assume the app verifies the email
+      displayName: `${appData.firstName} ${appData.lastName}`,
+      phoneNumber: appPhone // Store their phone number in auth as well
+    });
+  } catch (error) {
+    if (error.code === 'auth/email-already-exists') {
+      console.log(`Auth user for ${appEmail} already exists. Skipping auth creation.`);
+      // This is a rare case where the auth user exists but the profile doc doesn't.
+      // We can try to find them and use their ID.
+      newDriverAuthUser = await admin.auth().getUserByEmail(appEmail);
+    } else {
+      console.error("Error creating new auth user:", error);
+      return; // Exit function on failure
+    }
+  }
+
+  const newDriverUid = newDriverAuthUser.uid;
+
+  // 4. Create the new, secure driver profile document
+  const driverDocRef = db.collection("drivers").doc(newDriverUid);
+  
+  // 5. Copy all relevant data from the application to the new master profile
+  // This is the "pre-fill" logic
+  await driverDocRef.set({
+    personalInfo: {
+      firstName: appData.firstName || "",
+      middleName: appData.middleName || "",
+      lastName: appData.lastName || "",
+      email: appData.email || "",
+      phone: appData.phone || "",
+      dob: appData.dob || "",
+      ssn: appData.ssn || "",
+      street: appData.street || "",
+      city: appData.city || "",
+      state: appData.state || "",
+      zip: appData.zip || "",
+      // Add other personal fields
+    },
+    qualifications: {
+      legalWork: appData['legal-work'] || "yes",
+      englishFluency: appData['english-fluency'] || "yes",
+      experienceYears: appData['experience-years'] || "",
+      // Add other qualification fields
+    },
+    licenses: [
+      {
+        cdlState: appData.cdlState || "",
+        cdlClass: appData.cdlClass || "",
+        cdlNumber: appData.cdlNumber || "",
+        cdlExpiration: appData.cdlExpiration || "",
+        endorsements: appData.endorsements || "",
+        hasTwic: appData['has-twic'] || "no",
+        twicExpiration: appData.twicExpiration || "",
+      }
+    ],
+    workHistory: appData.employers || [],
+    accidentHistory: appData.accidents || [],
+    violations: appData.violations || [],
+    // etc... add all fields you want in the master profile
+    
+    // Metadata
+    createdAt: serverTimestamp(),
+    lastUpdatedAt: serverTimestamp()
+  });
+
+  console.log(`Successfully created new driver profile for ${appEmail} with UID ${newDriverUid}`);
+  return;
+});
 });

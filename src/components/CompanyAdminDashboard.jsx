@@ -1,5 +1,6 @@
 // src/components/CompanyAdminDashboard.jsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom'; // <-- IMPORTED useNavigate
 import { useData } from '../App.jsx';
 import { loadApplications } from '../firebase/firestore.js';
 import { getFieldValue, getStatusColor } from '../utils/helpers.js';
@@ -7,8 +8,7 @@ import { ApplicationDetailView } from './ApplicationDetailView.jsx';
 import { auth } from '../firebase/config.js'; 
 import { getPortalUser } from '../firebase/firestore.js'; 
 import { ManageTeamModal } from './ManageTeamModal.jsx';
-import { LogOut, ArrowLeft, Search, ChevronDown, Users, FileText, CheckSquare, Bell, ArrowDownUp, AlertTriangle, User, ChevronUp, UserPlus, Replace } from 'lucide-react';
-
+import { LogOut, Search, ChevronDown, Users, FileText, CheckSquare, Bell, ArrowDownUp, AlertTriangle, User, ChevronUp, UserPlus, Replace, Settings } from 'lucide-react';
 
 // --- Reusable Stat Card Component ---
 function StatCard({ title, value, icon }) {
@@ -58,13 +58,11 @@ const sortApplications = (apps, config) => {
         break;
       case 'submittedAt':
       default:
-        // Use the Firestore timestamp for accurate date sorting
         aVal = a.submittedAt?.seconds || 0;
         bVal = b.submittedAt?.seconds || 0;
         break;
     }
 
-    // Compare values
     if (aVal < bVal) {
       return direction === 'asc' ? -1 : 1;
     }
@@ -75,10 +73,8 @@ const sortApplications = (apps, config) => {
   });
 };
 
-
 // --- Main Dashboard Component ---
 export function CompanyAdminDashboard() {
-  // --- 1. GET currentUserClaims ---
   const { currentCompanyProfile, handleLogout, returnToCompanyChooser, currentUserClaims } = useData();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,13 +89,11 @@ export function CompanyAdminDashboard() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
 
+  const navigate = useNavigate(); // <-- HOOK INITIALIZED
   const companyId = currentCompanyProfile?.id;
   const companyName = currentCompanyProfile?.companyName;
 
-  // --- 2. THIS IS THE FIX ---
-  // Get the user's role from their CLAIMS, not the company profile
   const isCompanyAdmin = currentUserClaims?.roles[companyId] === 'company_admin';
-  // --- END FIX ---
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -208,7 +202,7 @@ export function CompanyAdminDashboard() {
               <p className="text-sm text-gray-500">Applications Portal</p>
             </div>
             
-            {/* Header Right Side (NEW DROPDOWN) */}
+            {/* Header Right Side (User Dropdown) */}
             <div className="relative">
               <button
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
@@ -227,7 +221,7 @@ export function CompanyAdminDashboard() {
               {/* --- The Dropdown Menu --- */}
               {isUserMenuOpen && (
                 <div 
-                  className="absolute top-full right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+                  className="absolute top-full right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden z-50"
                   onClick={() => setIsUserMenuOpen(false)} // Close on click
                 >
                   <div className="p-4 border-b border-gray-200">
@@ -235,13 +229,23 @@ export function CompanyAdminDashboard() {
                     <p className="text-sm text-gray-500">{userEmail}</p>
                   </div>
                   <nav className="p-2">
+                    {/* --- UPDATED SETTINGS BUTTON --- */}
+                    <button 
+                      onClick={() => navigate('/company/settings')} 
+                      className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md text-gray-700 hover:bg-gray-100"
+                    >
+                      <Settings size={16} />
+                      Settings
+                    </button>
+                    {/* ------------------------------- */}
+
                     {isCompanyAdmin && (
                       <button 
                         onClick={() => setIsAddUserModalOpen(true)}
                         className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md text-gray-700 hover:bg-gray-100"
                       >
                         <UserPlus size={16} />
-                        Manage Team / Add User
+                        Manage Team
                       </button>
                     )}
                     <button 
@@ -307,7 +311,6 @@ export function CompanyAdminDashboard() {
                     <option value="submittedAt,desc">Newest First</option>
                     <option value="submittedAt,asc">Oldest First</option>
                     <option value="name,asc">Name (A-Z)</option>
-                    {/* ... other options */}
                   </select>
                   <ArrowDownUp size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 </div>
@@ -382,7 +385,6 @@ export function CompanyAdminDashboard() {
                 applicationId={selectedApp.id}
                 onClosePanel={() => setSelectedApp(null)}
                 onStatusUpdate={handleAppUpdate}
-                // --- 3. PASS THE CORRECT PROP ---
                 isCompanyAdmin={isCompanyAdmin} 
               />
             ) : (

@@ -1,147 +1,154 @@
-// src/App.jsx
-import React, { useState, useEffect, createContext, useContext } from 'react';
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from './firebase/config.js';
-import { getUserClaims, handleLogout } from './firebase/auth.js';
-import { getCompanyProfile } from './firebase/firestore.js';
+// [HR PORTAL] src/App.jsx
+import React, { useState, useEffect, useContext, createContext } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, getIdTokenResult, signOut } from "firebase/auth";
+import { auth, db } from './firebase/config'; 
 
-import { LoginScreen } from './components/LoginScreen.jsx';
-import { CompanyChooserModal } from './components/CompanyChooserModal.jsx';
-import { CompanyAdminDashboard } from './components/CompanyAdminDashboard.jsx';
-// --- NEW ---
-import { SuperAdminDashboard } from './components/SuperAdminDashboard.jsx';
-// --- END NEW ---
+// --- ADMIN COMPONENTS ---
+import { LoginScreen } from './components/LoginScreen';
+import { SuperAdminDashboard } from './components/SuperAdminDashboard';
+import { CompanyAdminDashboard } from './components/CompanyAdminDashboard';
+import { CompanyChooserModal } from './components/CompanyChooserModal';
+import { CompanySettings } from './components/admin/CompanySettings'; 
+import GlobalLoadingState from './components/feedback/GlobalLoadingState'; 
 
-// Create a Context to share data with all components
-const DataContext = createContext(null);
+// --- CONTEXT ---
+const DataContext = createContext();
 export const useData = () => useContext(DataContext);
 
-function App() {
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('login'); // 'login', 'super_admin', 'company_admin', 'chooser'
-  
+// --- INNER COMPONENT: Handles Auth & Routing Logic ---
+function AppContent() {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentUserClaims, setCurrentUserClaims] = useState(null);
   const [currentCompanyProfile, setCurrentCompanyProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showCompanyChooser, setShowCompanyChooser] = useState(false);
 
-  // This function is called after login OR from the company chooser
-  const loginToCompany = async (companyId, role) => {
-    console.log(`Logging into company ${companyId} with role ${role}`);
-    setLoading(true);
-    
-    const companyData = await getCompanyProfile(companyId);
-    if (!companyData) {
-      console.error("Could not load company profile! Logging out.");
-      handleLogout();
-      return;
-    }
-    
-    // UPDATED: Store the ID on the profile object for easy access
-    companyData.id = companyId;
-    setCurrentCompanyProfile(companyData);
-    setView('company_admin');
-    setLoading(false);
-  };
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // This lets a user go from the dashboard back to the chooser modal
-  const returnToCompanyChooser = () => {
-    if (!currentUserClaims || !currentUser) {
-      handleLogout();
-      return;
-    }
-    setCurrentCompanyProfile(null);
-    setView('chooser');
-  };
-
-  // This useEffect hook runs once and handles all auth logic
+  // -- Auth Listener --
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      // Reset all state on auth change
-      setCurrentUser(null);
-      setCurrentUserClaims(null);
-      setCurrentCompanyProfile(null);
-      setLoading(true);
-
       if (user) {
         setCurrentUser(user);
-        const claims = await getUserClaims(user, true);
-        setCurrentUserClaims(claims);
+        try {
+          // Force refresh token to get latest claims
+          const idTokenResult = await getIdTokenResult(user, true);
+          const claims = idTokenResult.claims;
+          setCurrentUserClaims(claims);
+          
+          // --- REDIRECT LOGIC ---
+          const isSuperAdmin = claims.roles?.globalRole === 'super_admin';
 
-        if (!claims || !claims.roles) {
-          console.error("User has no claims or roles! Logging out.");
-          handleLogout();
-          return;
-        }
-
-        // --- Role-Based Router ---
-        if (claims.roles.globalRole === 'super_admin') {
-          console.log("Redirecting to Super Admin Dashboard");
-          setView('super_admin');
-        } else {
-          const companyRoles = { ...claims.roles };
-          delete companyRoles.globalRole;
-          const companyIds = Object.keys(companyRoles);
-
-          if (companyIds.length === 0) {
-            console.error("Admin user has no company memberships! Logging out.");
-            handleLogout();
-          } else if (companyIds.length === 1) {
-            const companyId = companyIds[0];
-            const role = companyRoles[companyId];
-            loginToCompany(companyId, role); // Log in directly
-          } else {
-            console.log("User has multiple companies. Showing chooser modal.");
-            setView('chooser'); // Show company chooser
+          if (location.pathname === '/login' || location.pathname === '/') {
+             if (isSuperAdmin) {
+                navigate('/super-admin');
+             } else {
+                // Regular admin or user - check if they have a company selected
+                if (currentCompanyProfile) {
+                    navigate('/company/dashboard');
+                } else {
+                    // They need to pick a company first
+                    // We stay on a "neutral" page or just show the modal over the dashboard
+                    setShowCompanyChooser(true);
+                    navigate('/company/dashboard'); 
+                }
+             }
           }
+        } catch (e) {
+          console.error("Error getting claims:", e);
         }
       } else {
-        // User is logged out
-        setView('login');
+        // Not logged in
+        setCurrentUser(null);
+        setCurrentUserClaims(null);
+        setCurrentCompanyProfile(null);
+        if (location.pathname !== '/login') {
+            navigate('/login');
+        }
       }
-      
       setLoading(false);
     });
-
-    // Cleanup subscription on unmount
     return () => unsubscribe();
-  }, []);
+  }, [auth]); // Depend only on auth state changes
 
-  // --- Render logic based on state ---
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <h2 className="text-2xl font-bold text-gray-800">Loading...</h2>
-      </div>
-    );
-  }
+  const loginToCompany = async (companyId, role) => {
+    setLoading(true);
+    try {
+      const companyDoc = await getDoc(doc(db, "companies", companyId));
+      if (companyDoc.exists()) {
+        const companyData = { id: companyDoc.id, ...companyDoc.data() };
+        setCurrentCompanyProfile(companyData);
+        setShowCompanyChooser(false);
+        navigate('/company/dashboard');
+      }
+    } catch (error) {
+      console.error("Error logging into company:", error);
+      alert("Failed to load company.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // This is the data we'll provide to all child components
-  const contextValue = {
+  const handleLogout = async () => {
+    await signOut(auth);
+    setCurrentCompanyProfile(null);
+    setCurrentUserClaims(null);
+    navigate('/login');
+  };
+
+  const returnToCompanyChooser = () => {
+    setCurrentCompanyProfile(null);
+    navigate('/company/dashboard'); 
+    setShowCompanyChooser(true);
+  };
+
+  const adminContextValue = {
     currentUser,
     currentUserClaims,
     currentCompanyProfile,
+    loginToCompany,
     handleLogout,
-    returnToCompanyChooser,
-    loginToCompany
+    returnToCompanyChooser
   };
 
+  if (loading) return <GlobalLoadingState />;
+
   return (
-    <DataContext.Provider value={contextValue}>
-      <div className="app-container">
-        {view === 'login' && (
-          <LoginScreen />
-        )}
-        {view === 'super_admin' && (
-          <SuperAdminDashboard />
-        )}
-        {view === 'company_admin' && (
-           <CompanyAdminDashboard />
-        )}
-        {view === 'chooser' && (
-           <CompanyChooserModal />
-        )}
-      </div>
+    <DataContext.Provider value={adminContextValue}>
+      <Routes>
+        <Route path="/login" element={<LoginScreen />} />
+        <Route path="/super-admin" element={<SuperAdminDashboard />} />
+        
+        {/* Company Dashboard Routes */}
+        <Route path="/company/dashboard" element={
+           // If no company selected, we render an empty div but the Modal will be on top
+           <CompanyAdminDashboard /> 
+        } />
+        
+        <Route path="/company/settings" element={
+           currentCompanyProfile ? <CompanySettings /> : <Navigate to="/company/dashboard" />
+        } />
+
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+      
+      {/* Show Modal if logged in, not super admin, and no company selected */}
+      {currentUser && !currentCompanyProfile && currentUserClaims?.roles && !currentUserClaims.roles.globalRole && (
+        <CompanyChooserModal />
+      )}
     </DataContext.Provider>
+  );
+}
+
+// --- MAIN APP COMPONENT ---
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   );
 }
 
