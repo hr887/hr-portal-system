@@ -10,6 +10,8 @@ import {
     deleteDoc,
     query,
     where,
+    orderBy,
+    serverTimestamp,
     documentId
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -206,10 +208,7 @@ export async function getCompanyProfile(companyId) {
 // --- Company Admin Functions ---
 
 /**
- * UPDATED: Fetches applications *only* from the NESTED path.
- * The complex logic for root/nested merging has been removed.
- * @param {string} companyId - The ID of the company.
- * @returns {Promise<Array>} An array of application data.
+ * Fetches applications *only* from the NESTED path.
  */
 export async function loadApplications(companyId) {
     if (!companyId) {
@@ -217,18 +216,16 @@ export async function loadApplications(companyId) {
         return [];
     }
     
-    // 1. ONLY Query for NESTED applications
     const nestedAppsRef = collection(db, "companies", companyId, "applications");
     const nestedQuery = query(nestedAppsRef);
     const nestedSnapshot = await getDocs(nestedQuery);
 
-    // 2. Format and return
     const appList = [];
     nestedSnapshot.forEach(doc => {
         appList.push({
             id: doc.id,
             ...doc.data(),
-            isNestedApp: true // Hardcode this flag to true
+            isNestedApp: true
         });
     });
 
@@ -236,11 +233,7 @@ export async function loadApplications(companyId) {
 }
 
 /**
- * UPDATED: Gets a specific application.
- * Removes `isNestedApp` flag and *always* uses the nested path.
- * @param {string} companyId - The ID of the company.
- *a * @param {string} applicationId - The ID of the application.
- * @returns {Promise<DocumentSnapshot>} The Firestore DocumentSnapshot.
+ * Gets a specific application.
  */
 export async function getApplicationDoc(companyId, applicationId) {
     const docRef = doc(db, "companies", companyId, "applications", applicationId);
@@ -248,11 +241,7 @@ export async function getApplicationDoc(companyId, applicationId) {
 }
 
 /**
- * UPDATED: Updates the status of a specific application.
- * Removes `isNestedApp` flag and *always* uses the nested path.
- * @param {string} companyId - The ID of the company.
- * @param {string} applicationId - The ID of the application.
- * @param {string} newStatus - The new status string.
+ * Updates the status of a specific application.
  */
 export async function updateApplicationStatus(companyId, applicationId, newStatus) {
     const docRef = doc(db, "companies", companyId, "applications", applicationId);
@@ -260,11 +249,7 @@ export async function updateApplicationStatus(companyId, applicationId, newStatu
 }
 
 /**
- * UPDATED: Updates fields in a specific application document.
- * Removes `isNestedApp` flag and *always* uses the nested path.
- * @param {string} companyId - The ID of the company.
- * @param {string} applicationId - The ID of the application.
- * @param {object} data - The fields to update (e.g., { 'first-name': 'John' }).
+ * Updates fields in a specific application document.
  */
 export async function updateApplicationData(companyId, applicationId, data) {
     const docRef = doc(db, "companies", companyId, "applications", applicationId);
@@ -272,10 +257,7 @@ export async function updateApplicationData(companyId, applicationId, data) {
 }
 
 /**
- * UPDATED: Deletes a specific application document.
- * Removes `isNestedApp` flag and *always* uses the nested path.
- * @param {string} companyId - The ID of the company.
- * @param {string} applicationId - The ID of the application.
+ * Deletes a specific application document.
  */
 export async function deleteApplication(companyId, applicationId) {
     const docRef = doc(db, "companies", companyId, "applications", applicationId);
@@ -283,12 +265,7 @@ export async function deleteApplication(companyId, applicationId) {
 }
 
 /**
- * UPDATED: Calls a Cloud Function to move an application.
- * Hardcodes `isSourceNested: true` since all apps are now nested.
- * @param {string} sourceCompanyId - The ID of the company the application is leaving.
- * @param {string} destinationCompanyId - The ID of the company the application is going to.
- * @param {string} applicationId - The ID of the application document.
- * @returns {Promise<object>} Result of the Cloud Function call.
+ * Calls a Cloud Function to move an application.
  */
 export async function moveApplication(sourceCompanyId, destinationCompanyId, applicationId) {
     if (!sourceCompanyId || !destinationCompanyId || !applicationId) {
@@ -300,17 +277,15 @@ export async function moveApplication(sourceCompanyId, destinationCompanyId, app
         sourceCompanyId,
         destinationCompanyId,
         applicationId,
-        isSourceNested: true // This is now ALWAYS true
+        isSourceNested: true 
     });
 }
 
 
-// --- NEW FUNCTIONS FOR TEAM MANAGEMENT ---
+// --- Team Management Functions ---
 
 /**
  * Fetches all memberships for a specific company.
- * @param {string} companyId - The ID of the company.
- * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
  */
 export async function getMembershipsForCompany(companyId) {
     if (!companyId) return null;
@@ -321,8 +296,6 @@ export async function getMembershipsForCompany(companyId) {
 
 /**
  * Fetches user documents based on a list of user IDs.
- * @param {string[]} userIds - An array of user document IDs.
- * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
  */
 export async function getUsersFromIds(userIds) {
     if (!userIds || userIds.length === 0) {
@@ -331,4 +304,83 @@ export async function getUsersFromIds(userIds) {
     const userRef = collection(db, "users");
     const q = query(userRef, where(documentId(), "in", userIds));
     return await getDocs(q);
+}
+
+
+// --- Platform Leads Functions ---
+
+/**
+ * Fetch "Platform Leads" for a specific company.
+ */
+export async function loadCompanyLeads(companyId) {
+    if (!companyId) return [];
+    
+    const leadsRef = collection(db, "companies", companyId, "leads");
+    const q = query(leadsRef, orderBy("createdAt", "desc"));
+    
+    try {
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            isPlatformLead: true
+        }));
+    } catch (error) {
+        console.error("Error loading leads:", error);
+        return [];
+    }
+}
+
+/**
+ * Submit a Quick Apply (Lead) to a specific company.
+ */
+export async function submitCompanyLead(companyId, driverProfile) {
+    if (!companyId || !driverProfile) throw new Error("Missing data");
+
+    const leadData = {
+        driverId: driverProfile.id,
+        firstName: driverProfile.personalInfo.firstName,
+        lastName: driverProfile.personalInfo.lastName,
+        email: driverProfile.personalInfo.email,
+        phone: driverProfile.personalInfo.phone,
+        experience: driverProfile.qualifications.experienceYears,
+        driverType: driverProfile.driverProfile?.type || 'Unknown',
+        status: 'New Lead',
+        createdAt: serverTimestamp()
+    };
+
+    const leadsRef = collection(db, "companies", companyId, "leads");
+    return await addDoc(leadsRef, leadData);
+}
+
+
+// --- INTERNAL NOTES (HR ONLY) ---
+
+/**
+ * Fetch internal notes for a specific application.
+ */
+export async function getApplicationNotes(companyId, applicationId) {
+    const notesRef = collection(db, "companies", companyId, "applications", applicationId, "internal_notes");
+    // Order by newest first
+    const q = query(notesRef, orderBy("createdAt", "desc"));
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    }));
+}
+
+/**
+ * Add a new internal note.
+ */
+export async function addApplicationNote(companyId, applicationId, noteText, authorName) {
+    const notesRef = collection(db, "companies", companyId, "applications", applicationId, "internal_notes");
+    
+    await addDoc(notesRef, {
+        text: noteText,
+        author: authorName,
+        createdAt: serverTimestamp(),
+        type: 'note'
+    });
 }

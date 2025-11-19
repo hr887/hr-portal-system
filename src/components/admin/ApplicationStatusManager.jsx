@@ -1,6 +1,7 @@
 // src/components/admin/ApplicationStatusManager.jsx
 import React, { useState } from 'react';
 import { updateApplicationStatus } from '../../firebase/firestore.js';
+import { sendNotification } from '../../lib/notificationService'; 
 import { getStatusColor } from '../../utils/helpers.js';
 import { Section } from './ApplicationUI.jsx';
 
@@ -8,8 +9,8 @@ export function ApplicationStatusManager({
   companyId,
   applicationId,
   currentStatus,
-  onStatusUpdate
-  // --- REMOVED: isNestedApp prop ---
+  onStatusUpdate,
+  driverId 
 }) {
   const [selectedStatus, setSelectedStatus] = useState(currentStatus);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -19,10 +20,20 @@ export function ApplicationStatusManager({
     setStatusLoading(true);
     setStatusMessage('');
     try {
-      // --- UPDATED: Simplified function call ---
       await updateApplicationStatus(companyId, applicationId, selectedStatus);
-      setStatusMessage('Status Saved!');
-      onStatusUpdate(selectedStatus); // Pass the new status back to the parent modal
+      
+      if (driverId && selectedStatus !== currentStatus) {
+          await sendNotification({
+              recipientId: driverId,
+              title: 'Application Status Updated',
+              message: `Your application status has been changed to: ${selectedStatus}`,
+              type: 'info',
+              link: '/driver/dashboard' 
+          });
+      }
+
+      setStatusMessage('Status Saved & Driver Notified!');
+      onStatusUpdate(selectedStatus);
       setTimeout(() => setStatusMessage(''), 2000);
     } catch (err) {
       console.error("Error updating status:", err);

@@ -5,16 +5,7 @@ import { Section, Field, FileLink } from './ApplicationUI.jsx';
 import { ApplicationStatusManager } from './ApplicationStatusManager.jsx';
 import { Loader2, Upload, Paperclip, Download } from 'lucide-react';
 
-// --- UPDATED: Editable Field Component (now supports 'select') ---
-function EditableField({ 
-  label, 
-  fieldKey, 
-  value, 
-  onChange, 
-  isEditing, 
-  type = 'text', 
-  options = [] 
-}) {
+function EditableField({ label, fieldKey, value, onChange, isEditing, type = 'text', options = [] }) {
   const displayValue = getFieldValue(value);
 
   const renderDisplay = () => {
@@ -42,7 +33,6 @@ function EditableField({
     />
   );
   
-  // --- NEW: Select/Dropdown Renderer ---
   const renderSelect = () => (
     <select
       value={value || ''}
@@ -51,7 +41,6 @@ function EditableField({
     >
       <option value="">-- Select --</option>
       {options.map(opt => {
-        // Handle options being simple strings or {value, label} objects
         const val = typeof opt === 'object' ? opt.value : opt;
         const lbl = typeof opt === 'object' ? opt.label : opt;
         return <option key={val} value={val}>{lbl}</option>;
@@ -59,18 +48,11 @@ function EditableField({
     </select>
   );
 
-  // --- NEW: Render Logic ---
   const renderEditControl = () => {
     switch(type) {
-      case 'textarea':
-        return renderTextarea();
-      case 'select':
-        return renderSelect();
-      case 'date':
-      case 'time':
-      case 'text':
-      default:
-        return renderInput();
+      case 'textarea': return renderTextarea();
+      case 'select': return renderSelect();
+      default: return renderInput();
     }
   };
 
@@ -83,19 +65,8 @@ function EditableField({
     </div>
   );
 }
-// --- End Editable Field Component ---
 
-// --- Editable File Field ---
-function EditableFileField({
-  label,
-  fileKey,
-  fileData,
-  fileUrl,
-  isEditing,
-  isUploading,
-  onUpload,
-  onDelete
-}) {
+function EditableFileField({ label, fileKey, fileData, fileUrl, isEditing, isUploading, onUpload, onDelete }) {
   const fileName = fileData?.name ? getFieldValue(fileData.name) : 'Not Specified';
 
   const renderFileLink = () => {
@@ -145,38 +116,25 @@ function EditableFileField({
             <div className="flex gap-2">
               <label className="cursor-pointer px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-all">
                 Replace
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => onUpload(fileKey, e.target.files[0])}
-                />
+                <input type="file" className="hidden" onChange={(e) => onUpload(fileKey, e.target.files[0])} />
               </label>
               {fileUrl && (
-                <button
-                  type="button"
-                  className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-all"
-                  onClick={() => onDelete(fileKey, fileData?.storagePath)}
-                >
+                <button type="button" className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-all" onClick={() => onDelete(fileKey, fileData?.storagePath)}>
                   Remove
                 </button>
               )}
             </div>
           </div>
-        ) : (
-          renderFileLink()
-        )}
+        ) : renderFileLink()}
       </dd>
     </div>
   );
 }
-// --- End Editable File Field ---
 
-// --- Dynamic List Renderer ---
 function renderDynamicList(data, listKey, itemKeys) {
   const list = data[listKey] || [];
   if (list.length === 0) return <Field label={listKey.charAt(0).toUpperCase() + listKey.slice(1)} value="None recorded" />;
 
-  // NOTE: This section remains read-only as requested
   return (
     <div className="space-y-4">
       {list.map((item, index) => (
@@ -191,7 +149,6 @@ function renderDynamicList(data, listKey, itemKeys) {
   );
 }
 
-// --- Main Component ---
 export function ApplicationInfo({
   appData,
   fileUrls,
@@ -200,15 +157,19 @@ export function ApplicationInfo({
   handleDataChange,
   handleAdminFileUpload,
   handleAdminFileDelete,
-  // Status Manager Props
   companyId,
   applicationId,
   currentStatus,
-  handleStatusUpdate
-  // --- REMOVED: isNestedApp prop ---
+  handleStatusUpdate,
+  isCompanyAdmin,
+  isSuperAdmin
 }) {
   const data = appData;
   const yesNoOptions = [{value: 'yes', label: 'Yes'}, {value: 'no', label: 'No'}];
+  
+  // Identify the driver ID to send notifications
+  // It might be stored as 'driverId' (leads) or 'userId' (older apps)
+  const driverId = data.driverId || data.userId;
 
   return (
     <div className="space-y-6">
@@ -350,7 +311,7 @@ export function ApplicationInfo({
           applicationId={applicationId}
           currentStatus={currentStatus}
           onStatusUpdate={handleStatusUpdate}
-          // --- REMOVED: isNestedApp prop ---
+          driverId={driverId} // <-- FIXED: Passing Driver ID for notifications
         />
       )}
     </div>
