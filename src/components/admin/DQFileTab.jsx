@@ -23,7 +23,6 @@ const DQ_FILE_TYPES = [
 ];
 
 export function DQFileTab({ companyId, applicationId }) {
-  // --- REMOVED: isNestedApp prop ---
   
   const [dqFiles, setDqFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,13 +33,13 @@ export function DQFileTab({ companyId, applicationId }) {
   const [fileToUpload, setFileToUpload] = useState(null);
   const [selectedFileType, setSelectedFileType] = useState(DQ_FILE_TYPES[0]);
 
-  // --- 1. UPDATED: Get the correct Firestore path (simplified) ---
+  // --- 1. Get the correct Firestore path (simplified) ---
   // This helper memo ensures we always have the right collection reference
   const dqFilesCollectionRef = useMemo(() => {
     // Path is always nested now
     const appRef = doc(db, "companies", companyId, "applications", applicationId);
     return collection(appRef, "dq_files");
-  }, [companyId, applicationId]); // --- REMOVED: isNestedApp dependency ---
+  }, [companyId, applicationId]);
 
   // --- 2. Function to fetch all DQ files ---
   const fetchDqFiles = async () => {
@@ -76,8 +75,8 @@ export function DQFileTab({ companyId, applicationId }) {
     setError('');
 
     try {
-      // Create storage path
-      const storagePath = `applications/${applicationId}/dq_files/${selectedFileType.replace(/[^a-zA-Z0-9]/g, '_')}_${fileToUpload.name}`;
+      // --- UPDATED STORAGE PATH: Includes companyId now ---
+      const storagePath = `companies/${companyId}/applications/${applicationId}/dq_files/${selectedFileType.replace(/[^a-zA-Z0-9]/g, '_')}_${fileToUpload.name}`;
       const storageRef = ref(storage, storagePath);
 
       // Upload

@@ -90,7 +90,6 @@ export function ApplicationDetailsModal({
         setAppData(data);
         setCurrentStatus(data.status || 'New Application');
         
-        // --- THIS IS THE FIX ---
         // Helper to get URL: try storage path first, fallback to saved URL
         const getUrl = async (fileData) => {
           if (!fileData) return null;
@@ -115,7 +114,6 @@ export function ApplicationDetailsModal({
           getUrl(data['mvr-consent-upload']),
           getUrl(data['drug-test-consent-upload'])
         ]);
-        // --- END FIX ---
 
         setFileUrls({ cdl, cdlBack, ssc, medical, twic, mvrConsent, drugTestConsent });
         
@@ -153,7 +151,8 @@ export function ApplicationDetailsModal({
         }
     }
 
-    const storagePath = `applications/${applicationId}/${fieldKey}-${file.name}`;
+    // --- UPDATED STORAGE PATH: Includes companyId now ---
+    const storagePath = `companies/${companyId}/applications/${applicationId}/${fieldKey}-${file.name}`;
     const fileRef = ref(storage, storagePath);
 
     try {
@@ -241,8 +240,6 @@ export function ApplicationDetailsModal({
       alert("Application data or company profile is not loaded yet.");
       return;
     }
-    
-    console.log("Data being sent to PDF:", appData);
     
     const companyName = companyProfile.companyName || "[COMPANY_NAME]";
     const agreements = agreementTemplates.map(agg => ({

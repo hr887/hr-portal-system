@@ -69,8 +69,7 @@ export function GeneralDocumentsTab({
     fetchGeneralDocs();
   }, [generalDocsCollectionRef]);
 
-  // --- 4. THIS IS THE FIX ---
-  // Create list of application files from the appData prop
+  // --- 4. Create list of application files from the appData prop ---
   const applicationFiles = useMemo(() => {
     if (!appData) return [];
     
@@ -93,10 +92,9 @@ export function GeneralDocumentsTab({
       };
     }).filter(file => file !== null); // Filter out any null entries
     
-  }, [appData]); // <-- Now correctly depends on appData
-  // --- END FIX ---
+  }, [appData]); 
 
-  // --- NEW: 5. Combine both lists and sort by date ---
+  // --- 5. Combine both lists and sort by date ---
   const combinedDocs = useMemo(() => {
     // Add a 'createdAt' to app files for sorting (using 0 so they appear older)
     const formattedAppFiles = applicationFiles.map(file => ({
@@ -118,7 +116,7 @@ export function GeneralDocumentsTab({
   }, [applicationFiles, generalDocs]);
 
 
-  // --- 6. Handle File Upload (No Change) ---
+  // --- 6. Handle File Upload ---
   const handleUpload = async () => {
     if (!fileToUpload) {
       setError("Please select a file to upload.");
@@ -130,7 +128,8 @@ export function GeneralDocumentsTab({
     setError('');
 
     try {
-      const storagePath = `applications/${applicationId}/general_documents/${Date.now()}_${fileToUpload.name}`;
+      // --- UPDATED STORAGE PATH: Includes companyId now ---
+      const storagePath = `companies/${companyId}/applications/${applicationId}/general_documents/${Date.now()}_${fileToUpload.name}`;
       const storageRef = ref(storage, storagePath);
 
       await uploadBytes(storageRef, fileToUpload);
@@ -162,7 +161,7 @@ export function GeneralDocumentsTab({
     }
   };
 
-  // --- 7. Handle File Delete (No Change) ---
+  // --- 7. Handle File Delete ---
   const handleDelete = async (file) => {
     // This will automatically not run on App files due to button being hidden
     if (!window.confirm(`Are you sure you want to delete "${file.fileName}"?`)) {
@@ -241,7 +240,7 @@ export function GeneralDocumentsTab({
         </div>
       </Section>
       
-      {/* --- UPDATED: Render the combined list --- */}
+      {/* --- Render the combined list --- */}
       <Section title="All Documents">
         <div className="space-y-3">
           {loading && (
@@ -268,7 +267,7 @@ export function GeneralDocumentsTab({
                 </div>
               </div>
               <div className="flex gap-2 shrink-0 items-center">
-                {/* --- NEW: Source Badge --- */}
+                {/* Source Badge */}
                 <span 
                   className={`px-2 py-0.5 text-xs font-semibold rounded-full
                     ${file.isReadonly 
@@ -288,7 +287,7 @@ export function GeneralDocumentsTab({
                 >
                   <Download size={18} />
                 </a>
-                {/* --- NEW: Conditional Delete Button --- */}
+                {/* Conditional Delete Button */}
                 {!file.isReadonly && (
                   <button
                     className="p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all"

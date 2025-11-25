@@ -5,14 +5,14 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
 
-// Your web app's Firebase configuration
+// Connect to the variables in your .env file
 const firebaseConfig = {
-  apiKey: "AIzaSyBD2Zd4qjZCdqf3B2Gd13xjooTicvc-tXY",
-  authDomain: "truckerapp-system.firebaseapp.com",
-  projectId: "truckerapp-system",
-  storageBucket: "truckerapp-system.firebasestorage.app",
-  messagingSenderId: "725898258453",
-  appId: "1:725898258453:web:5a5f0490e7baf3e518061c"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize Firebase
@@ -24,4 +24,4 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
 
-console.log("Firebase v10.12.2 has been connected!");
+console.log("Firebase has been connected securely!");

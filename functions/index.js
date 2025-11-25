@@ -1,305 +1,195 @@
 // functions/index.js
 
-// Import the necessary Firebase Admin modules
 const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-
-// Initialize the Firebase Admin App
-admin.initializeApp();
-
-/**
- * =================================================================
- * createPortalUser
- * =================================================================
- * A secure, callable function for creating new portal users
- * (Company Admins or HR Users).
- *
- * This function is intentionally designed so that ONLY a Super Admin
- * can create another Super Admin. A Company Admin CANNOT.
- *
- * This function WILL allow a Company Admin to create a new user
- * (like 'hr_user') for *their own company*.
- */
-exports.createPortalUser = onCall(async (request) => {
-  // 1. Get the data sent from the app
-  const { fullName, email, password, companyId, role } = request.data;
-
-  // 2. Check if the person *calling* this function is authenticated
-  if (!request.auth) {
-    throw new HttpsError(
-      "unauthenticated",
-      "You must be logged in to create a user."
-    );
-  }
-
-  // 3. Get the claims (roles) of the person calling the function
-  const callerClaims = request.auth.token.roles || {};
-  const isSuperAdmin = callerClaims.globalRole === "super_admin";
-  
-  // 4. Get the role they are trying to assign to the new user
-  // This is a security check to prevent a Company Admin
-  // from creating a Super Admin.
-  let newRoleClaims = {};
-  
-  if (role === "super_admin") {
-    // ONLY a Super Admin can create another Super Admin
-    if (!isSuperAdmin) {
-      throw new HttpsError(
-        "permission-denied",
-        "You must be a Super Admin to create another Super Admin."
-      );
-    }
-    newRoleClaims = { globalRole: "super_admin" };
-
-  } else if (role === "company_admin" || role === "hr_user") {
-    
-    // To create a company user, the caller must be either:
-    // 1. A Super Admin
-    // 2. A Company Admin for that *specific company*
-    const isAdminForThisCompany = callerClaims[companyId] === "company_admin";
-
-    if (!isSuperAdmin && !isAdminForThisCompany) {
-      throw new HttpsError(
-        "permission-denied",
-        "You must be a Super Admin or a Company Admin for this company to create new users."
-      );
-    }
-    
-    // The new user's role will be for this specific company
-    newRoleClaims = { [companyId]: role };
-
-  } else {
-    // Unknown role
-    throw new HttpsError("invalid-argument", "An invalid role was provided.");
-  }
-
-  // --- If all security checks pass, create the user ---
-
-  let newUserRecord;
-  try {
-    // 5. Create the user in Firebase Authentication
-    newUserRecord = await admin.auth().createUser({
-      email: email,
-      password: password,
-      displayName: fullName,
-      emailVerified: true, // We trust the admin
-    });
-  } catch (error) {
-    console.error("Error creating auth user:", error.message);
-    throw new HttpsError("internal", `Could not create auth user: ${error.message}`);
-  }
-
-  const newUserId = newUserRecord.uid;
-
-  try {
-    // 6. Create the user's document in the /users collection
-    await admin.firestore().collection("users").doc(newUserId).set({
-      name: fullName,
-      email: email,
-    });
-
-    // 7. Create the membership document
-    await admin.firestore().collection("memberships").add({
-      userId: newUserId,
-      companyId: companyId,
-      role: role,
-    });
-
-    // 8. Set the user's custom claims (this is what lets them log in!)
-    await admin.auth().setCustomUserClaims(newUserId, {
-      roles: newRoleClaims,
-    });
-
-    // 9. Send a success message back to the app
-    return {
-      status: "success",
-      message: `Successfully created user ${fullName} (${email}) and assigned them as ${role}.`,
-    };
-
-  } catch (error) {
-    // This is an "undo" step. If Firestore fails, delete the auth user
-    // we just created so we don't have a half-broken user.
-    await admin.auth().deleteUser(newUserId);
-    console.error("Error setting claims or creating user docs:", error.message);
-    throw new HttpsError("internal", `Could not create user in database: ${error.message}`);
-  }
-});
-
-/**
- * =================================================================
- * (This is the other Cloud Function code from your project)
- * =================================================================
- */
-exports.getCompanyProfile = onCall((request) => {
-  // We can add security here later if needed
-  const companyId = request.data.companyId;
-  if (!companyId) {
-    throw new HttpsError("invalid-argument", "No companyId provided.");
-  }
-  return admin.firestore().collection('companies').doc(companyId).get()
-    .then(doc => {
-      if (!doc.exists) {
-        throw new HttpsError("not-found", "Company not found.");
-      }
-      return doc.data();
-    });
-});
-
-exports.moveApplication = onCall(async (request) => {
-  const { sourceCompanyId, destinationCompanyId, applicationId, isSourceNested } = request.data;
-  
-  // We should add security checks here later
-  
-  const db = admin.firestore();
-  
-  let sourcePath;
-  if (isSourceNested) {
-    sourcePath = `companies/${sourceCompanyId}/applications/${applicationId}`;
-  } else {
-    sourcePath = `applications/${applicationId}`;
-  }
-  
-  const destPath = `companies/${destinationCompanyId}/applications/${applicationId}`;
-  
-  const sourceRef = db.doc(sourcePath);
-  const destRef = db.doc(destPath);
-  
-  try {
-    const docSnap = await sourceRef.get();
-    if (!docSnap.exists) {
-      throw new HttpsError("not-found", "Source application not found.");
-    }
-    
-    const appData = docSnap.data();
-    
-    // Update companyId in the data
-    appData.companyId = destinationCompanyId; 
-    
-    // Run the move in a batch
-    const batch = db.batch();
-    batch.set(destRef, appData); // Create the new document
-    batch.delete(sourceRef);     // Delete the old document
-    
-    await batch.commit();
-    
-    return { status: "success", message: "Application moved successfully." };
-    
-  } catch (error) {
-    console.error("Error moving application:", error);
-    throw new HttpsError("internal", error.message);
-  }
-  /**
- * =================================================================
- * onApplicationSubmitted
- * =================================================================
- * This function triggers AFTER a new application is created in any
- * company's subcollection.
- *
- * It automatically creates a "master profile" for the driver
- * and pre-fills it with their application data.
- */
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 
-exports.onApplicationSubmitted = onDocumentCreated("companies/{companyId}/applications/{applicationId}", async (event) => {
-  const snapshot = event.data;
-  if (!snapshot) {
-    console.log("No data associated with the event");
-    return;
-  }
-  const appData = snapshot.data();
-  const appEmail = appData.email;
-  const appPhone = appData.phone;
+// Initialize the Firebase Admin App once
+admin.initializeApp();
 
-  if (!appEmail) {
-    console.log(`Application ${snapshot.id} has no email. Skipping profile creation.`);
-    return;
-  }
-
+// --- SHARED HELPER: Create/Update Driver Profile ---
+// This helper function ensures driver data is synced to their master profile
+async function processDriverData(data) {
   const db = admin.firestore();
-  
-  // 1. Check if a driver profile with this email *already* exists.
-  const driversRef = db.collection("drivers");
-  const existingDriverQuery = await driversRef.where("personalInfo.email", "==", appEmail).limit(1).get();
+  const email = data.email;
+  const phone = data.phone;
 
-  if (!existingDriverQuery.empty) {
-    console.log(`Driver profile for ${appEmail} already exists. Skipping creation.`);
-    // TODO: In the future, we could *update* their profile with this new data.
-    return;
-  }
+  if (!email) return;
 
-  // 2. If no profile exists, create a new one.
-  console.log(`Creating new driver profile for ${appEmail}...`);
-  let newDriverAuthUser;
+  let driverUid;
+
+  // 1. Find or Create Auth User
   try {
-    // 3. Create a new "passwordless" user in Firebase Authentication
-    newDriverAuthUser = await admin.auth().createUser({
-      email: appEmail,
-      emailVerified: true, // We assume the app verifies the email
-      displayName: `${appData.firstName} ${appData.lastName}`,
-      phoneNumber: appPhone // Store their phone number in auth as well
+    // Try to create a new user
+    const newDriverAuth = await admin.auth().createUser({
+      email: email,
+      emailVerified: true,
+      displayName: `${data.firstName} ${data.lastName}`,
+      phoneNumber: phone || undefined
     });
+    driverUid = newDriverAuth.uid;
+    console.log(`Created new Auth user for: ${email}`);
   } catch (error) {
+    // If user already exists, find them
     if (error.code === 'auth/email-already-exists') {
-      console.log(`Auth user for ${appEmail} already exists. Skipping auth creation.`);
-      // This is a rare case where the auth user exists but the profile doc doesn't.
-      // We can try to find them and use their ID.
-      newDriverAuthUser = await admin.auth().getUserByEmail(appEmail);
+      console.log(`User already exists for: ${email}`);
+      try {
+        const existingUser = await admin.auth().getUserByEmail(email);
+        driverUid = existingUser.uid;
+      } catch (innerError) {
+         console.error("Error finding existing user:", innerError);
+         return;
+      }
     } else {
-      console.error("Error creating new auth user:", error);
-      return; // Exit function on failure
+      console.error("Error managing driver auth:", error);
+      return; 
     }
   }
 
-  const newDriverUid = newDriverAuthUser.uid;
-
-  // 4. Create the new, secure driver profile document
-  const driverDocRef = db.collection("drivers").doc(newDriverUid);
+  // 2. Create/Update Master Profile in Firestore
+  const driverDocRef = db.collection("drivers").doc(driverUid);
   
-  // 5. Copy all relevant data from the application to the new master profile
-  // This is the "pre-fill" logic
-  await driverDocRef.set({
+  // Map fields from either Lead or Application format
+  const masterProfileData = {
     personalInfo: {
-      firstName: appData.firstName || "",
-      middleName: appData.middleName || "",
-      lastName: appData.lastName || "",
-      email: appData.email || "",
-      phone: appData.phone || "",
-      dob: appData.dob || "",
-      ssn: appData.ssn || "",
-      street: appData.street || "",
-      city: appData.city || "",
-      state: appData.state || "",
-      zip: appData.zip || "",
-      // Add other personal fields
+      firstName: data.firstName || "",
+      lastName: data.lastName || "",
+      middleName: data.middleName || "",
+      email: email,
+      phone: phone || "",
+      dob: data.dob || "",
+      ssn: data.ssn || "",
+      street: data.street || "",
+      city: data.city || "",
+      state: data.state || "",
+      zip: data.zip || ""
     },
     qualifications: {
-      legalWork: appData['legal-work'] || "yes",
-      englishFluency: appData['english-fluency'] || "yes",
-      experienceYears: appData['experience-years'] || "",
-      // Add other qualification fields
+      // Handle 'experience' (Lead form) OR 'experience-years' (App form)
+      experienceYears: data.experience || data['experience-years'] || "",
+      legalWork: data['legal-work'] || "yes",
+      englishFluency: data['english-fluency'] || "yes",
     },
     licenses: [
       {
-        cdlState: appData.cdlState || "",
-        cdlClass: appData.cdlClass || "",
-        cdlNumber: appData.cdlNumber || "",
-        cdlExpiration: appData.cdlExpiration || "",
-        endorsements: appData.endorsements || "",
-        hasTwic: appData['has-twic'] || "no",
-        twicExpiration: appData.twicExpiration || "",
+        state: data.cdlState || "",
+        number: data.cdlNumber || "",
+        expiration: data.cdlExpiration || "",
+        class: data.cdlClass || "",
+        endorsements: data.endorsements || "",
+        hasTwic: data['has-twic'] || "no",
+        twicExpiration: data.twicExpiration || "",
       }
     ],
-    workHistory: appData.employers || [],
-    accidentHistory: appData.accidents || [],
-    violations: appData.violations || [],
-    // etc... add all fields you want in the master profile
-    
-    // Metadata
-    createdAt: serverTimestamp(),
-    lastUpdatedAt: serverTimestamp()
-  });
+    // Common lists
+    workHistory: data.employers || [],
+    accidentHistory: data.accidents || [],
+    violations: data.violations || [],
 
-  console.log(`Successfully created new driver profile for ${appEmail} with UID ${newDriverUid}`);
-  return;
+    // Metadata
+    lastApplicationDate: admin.firestore.FieldValue.serverTimestamp(),
+    lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+
+  // Use set with merge: true to update without overwriting existing data
+  await driverDocRef.set(masterProfileData, { merge: true });
+  console.log(`Successfully synced profile for ${email} with UID ${driverUid}`);
+}
+
+
+// --- EXPORT 1: Create Portal User (Admin Only) ---
+exports.createPortalUser = onCall(async (request) => {
+  const { fullName, email, password, companyId, role } = request.data;
+
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "You must be logged in to create a user.");
+  }
+
+  const callerClaims = request.auth.token.roles || {};
+  const isSuperAdmin = callerClaims.globalRole === "super_admin";
+  let newRoleClaims = {};
+  
+  if (role === "super_admin") {
+    if (!isSuperAdmin) throw new HttpsError("permission-denied", "Super Admin only.");
+    newRoleClaims = { globalRole: "super_admin" };
+  } else if (role === "company_admin" || role === "hr_user") {
+    const isAdminForThisCompany = callerClaims[companyId] === "company_admin";
+    if (!isSuperAdmin && !isAdminForThisCompany) {
+        throw new HttpsError("permission-denied", "Permission denied.");
+    }
+    newRoleClaims = { [companyId]: role };
+  } else {
+    throw new HttpsError("invalid-argument", "Invalid role.");
+  }
+
+  try {
+    const newUserRecord = await admin.auth().createUser({
+      email, 
+      password, 
+      displayName: fullName, 
+      emailVerified: true,
+    });
+    const newUserId = newUserRecord.uid;
+
+    await admin.firestore().collection("users").doc(newUserId).set({ name: fullName, email });
+    await admin.firestore().collection("memberships").add({ userId: newUserId, companyId, role });
+    await admin.auth().setCustomUserClaims(newUserId, { roles: newRoleClaims });
+
+    return { status: "success", message: "User created." };
+  } catch (error) {
+    throw new HttpsError("internal", error.message);
+  }
 });
+
+// --- EXPORT 2: Get Company Profile ---
+exports.getCompanyProfile = onCall((request) => {
+  const companyId = request.data.companyId;
+  if (!companyId) throw new HttpsError("invalid-argument", "No companyId provided.");
+  
+  return admin.firestore().collection('companies').doc(companyId).get()
+    .then(doc => {
+        if (!doc.exists) throw new HttpsError("not-found", "Company not found.");
+        return doc.data();
+    });
+});
+
+// --- EXPORT 3: Move Application ---
+exports.moveApplication = onCall(async (request) => {
+  const { sourceCompanyId, destinationCompanyId, applicationId, isSourceNested } = request.data;
+  const db = admin.firestore();
+  
+  // Handle path logic (Nested vs Root) - defaulting to nested for company apps
+  const sourcePath = isSourceNested 
+    ? `companies/${sourceCompanyId}/applications/${applicationId}` 
+    : `applications/${applicationId}`;
+    
+  const destRef = db.doc(`companies/${destinationCompanyId}/applications/${applicationId}`);
+  const sourceRef = db.doc(sourcePath);
+  
+  const docSnap = await sourceRef.get();
+  if (!docSnap.exists) throw new HttpsError("not-found", "App not found.");
+  
+  const appData = docSnap.data();
+  appData.companyId = destinationCompanyId;
+  
+  const batch = db.batch();
+  batch.set(destRef, appData); 
+  batch.delete(sourceRef);     
+  await batch.commit();
+  
+  return { status: "success", message: "Moved." };
+});
+
+// --- EXPORT 4: Trigger on Company Application ---
+// This runs when a full application is submitted to a company
+exports.onApplicationSubmitted = onDocumentCreated("companies/{companyId}/applications/{applicationId}", async (event) => {
+  if (!event.data) return;
+  await processDriverData(event.data.data());
+});
+
+// --- EXPORT 5: Trigger on General Lead ---
+// This runs when a quick lead is submitted on the home page
+exports.onLeadSubmitted = onDocumentCreated("leads/{leadId}", async (event) => {
+  if (!event.data) return;
+  await processDriverData(event.data.data());
 });

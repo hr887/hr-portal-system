@@ -15,7 +15,7 @@ import { MoveApplicationModal, DeleteConfirmModal } from './admin/ApplicationMod
 import { DQFileTab } from './admin/DQFileTab.jsx';
 import { GeneralDocumentsTab } from './admin/GeneralDocumentsTab.jsx';
 import { SendOfferModal } from './admin/SendOfferModal.jsx';
-import { NotesTab } from './admin/NotesTab.jsx'; // <-- NEW IMPORT
+import { NotesTab } from './admin/NotesTab.jsx';
 
 const agreementTemplates = [
   { id: 'agreement-release', title: 'RELEASE AND WAIVER', text: `[COMPANY_NAME] is released from all liability in responding to inquiries and releasing information in connection with my application.` },
@@ -137,7 +137,8 @@ export function ApplicationDetailView({
         try { await deleteObject(ref(storage, oldStoragePath)); } catch (e) {}
     }
 
-    const storagePath = `applications/${applicationId}/${fieldKey}-${file.name}`;
+    // --- UPDATED STORAGE PATH: Includes companyId now ---
+    const storagePath = `companies/${companyId}/applications/${applicationId}/${fieldKey}-${file.name}`;
     const fileRef = ref(storage, storagePath);
 
     try {
@@ -271,7 +272,7 @@ export function ApplicationDetailView({
       <div className="p-4 border-b border-gray-200 bg-white rounded-t-lg flex justify-between items-center shrink-0">
         <div className="flex items-center gap-3">
             <h3 id="modal-title" className="text-2xl font-bold text-gray-800">
-            {loading ? "Loading..." : currentAppName}
+              {loading ? "Loading..." : currentAppName}
             </h3>
             {/* --- Send Offer Button --- */}
             {['Approved', 'Background Check'].includes(currentStatus) && (
