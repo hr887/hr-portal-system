@@ -1,297 +1,154 @@
 // src/components/ManageTeamModal.jsx
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Trash2, Loader2, User, Send } from 'lucide-react';
-// --- 1. NEW IMPORTS ---
-import { functions } from '../firebase/config.js'; // Import functions
-import { httpsCallable } from "firebase/functions"; // Import httpsCallable
-import { getMembershipsForCompany, getUsersFromIds, deleteMembership } from '../firebase/firestore.js';
-import { getFieldValue } from '../utils/helpers.js';
-// --- END IMPORTS ---
-
-// --- Team Member Row Component ---
-function TeamMemberRow({ user, membership, onRemoveSuccess }) {
-  const [isRemoving, setIsRemoving] = useState(false);
-  
-  const handleRemove = async () => {
-    if (window.confirm(`Are you sure you want to remove ${user.name} from this company?`)) {
-      setIsRemoving(true);
-      try {
-        await deleteMembership(membership.id);
-        onRemoveSuccess(); // This will tell the modal to refresh its list
-      } catch (err) {
-        console.error("Error removing membership:", err);
-        alert("Failed to remove user: " + err.message);
-        setIsRemoving(false);
-      }
-    }
-  };
-
-  return (
-    <div className="flex items-center justify-between gap-3 p-4 border border-gray-200 rounded-lg bg-white">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-semibold">
-          {getFieldValue(user.name).charAt(0).toUpperCase()}
-        </div>
-        <div>
-          <p className="font-semibold text-gray-900">{getFieldValue(user.name)}</p>
-          <p className="text-sm text-gray-500">{getFieldValue(user.email)}</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-gray-600 capitalize">
-          {membership.role.replace('_', ' ')}
-        </span>
-        <button 
-          title="Remove user"
-          onClick={handleRemove}
-          disabled={isRemoving}
-          className="p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50"
-        >
-          {isRemoving ? <Loader2 className="animate-spin" /> : <Trash2 size={16} />}
-        </button>
-      </div>
-    </div>
-  );
-}
-// --- END NEW COMPONENT ---
-
+// --- FIX: Added 'Users' to the import list below ---
+import { X, Plus, Save, Trash2, User, Users, Mail, Target, Loader2, CheckCircle, Link as LinkIcon, Copy } from 'lucide-react';
+import { db, functions } from '../firebase/config';
+import { httpsCallable } from 'firebase/functions';
+import { collection, query, where, getDocs, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 export function ManageTeamModal({ companyId, onClose }) {
+  const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [teamMembers, setTeamMembers] = useState([]);
-  const [error, setError] = useState('');
-
-  const [newUserName, setNewUserName] = useState('');
-  const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserPassword, setNewUserPassword] = useState(''); // --- 2. ADDED PASSWORD FIELD ---
-  const [newUserRole, setNewUserRole] = useState('hr_user'); 
-  const [isInviting, setIsInviting] = useState(false);
-  const [inviteError, setInviteError] = useState('');
-  const [inviteSuccess, setInviteSuccess] = useState(''); // --- 2. ADDED SUCCESS MESSAGE ---
-
-  const fetchTeam = async () => {
-    if (!companyId) {
-      setError("No Company ID provided.");
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    try {
-      // 1. Get all memberships for this company
-      const memberSnap = await getMembershipsForCompany(companyId);
-      if (memberSnap.empty) {
-        setTeamMembers([]);
-        setLoading(false);
-        return;
-      }
-
-      const memberships = memberSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const userIds = memberships.map(mem => mem.userId);
-
-      // 2. Get all user profiles for those user IDs
-      const userSnap = await getUsersFromIds(userIds);
-      if (!userSnap || userSnap.empty) {
-        throw new Error("Could not find user profiles for team members.");
-      }
-
-      const userMap = new Map();
-      userSnap.docs.forEach(doc => {
-        userMap.set(doc.id, { id: doc.id, ...doc.data() });
-      });
-
-      // 3. Combine the data
-      const combinedTeam = memberships.map(mem => ({
-        membership: mem,
-        user: userMap.get(mem.userId)
-      })).filter(team => team.user); // Filter out any missing users
-
-      setTeamMembers(combinedTeam);
-
-    } catch (err) {
-      console.error("Error fetching team:", err);
-      setError("Could not load team members. " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTeam();
-  }, [companyId]);
   
-  // --- 3. THIS IS THE NEW, FULLY FUNCTIONAL INVITE LOGIC ---
-  const handleInviteUser = async (e) => {
-    e.preventDefault();
-    setIsInviting(true);
-    setInviteError('');
-    setInviteSuccess('');
+  // Invite Link State
+  const inviteUrl = `${window.location.origin}/join/${companyId}`;
+  const [copied, setCopied] = useState(false);
 
-    // This is the logic copied from your Super Admin CreateView.jsx
-    try {
-      const createPortalUser = httpsCallable(functions, 'createPortalUser');
-      const result = await createPortalUser({
-        fullName: newUserName, 
-        email: newUserEmail, 
-        password: newUserPassword,
-        companyId: companyId, // Pass the *current* company's ID
-        role: newUserRole
-      });
-      
-      setInviteSuccess(result.data.message || "User created successfully!");
-      
-      // Clear the form
-      setNewUserName('');
-      setNewUserEmail('');
-      setNewUserPassword('');
-      
-      // Refresh the team list
-      await fetchTeam();
+  // --- 1. LOAD TEAM MEMBERS ---
+  useEffect(() => {
+    if (!companyId) return;
+    
+    // Query memberships for this company
+    const q = query(collection(db, "memberships"), where("companyId", "==", companyId));
+    
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const members = [];
+      for (const memDoc of snapshot.docs) {
+        const memData = memDoc.data();
+        const userId = memData.userId;
+        
+        // Fetch User Details
+        let userData = { name: 'Unknown', email: 'No Email' };
+        try {
+            const userSnap = await getDocs(query(collection(db, "users"), where("__name__", "==", userId)));
+            if (!userSnap.empty) userData = userSnap.docs[0].data();
+        } catch (e) { console.log(e) }
 
-      // Hide success message after 3 seconds
-      setTimeout(() => setInviteSuccess(''), 3000);
+        // Fetch Quota
+        let quota = 50;
+        try {
+            const settingsSnap = await getDocs(query(collection(db, "companies", companyId, "team"), where("__name__", "==", userId)));
+            if (!settingsSnap.empty) quota = settingsSnap.docs[0].data().dailyQuota || 50;
+        } catch (e) { console.log(e) }
 
-    } catch (error) { 
-      console.error("Error creating user:", error);
-      setInviteError(error.message); // Show the error from the Cloud Function
-    } finally { 
-      setIsInviting(false); 
-    }
+        members.push({ id: userId, ...userData, role: memData.role, quota });
+      }
+      setTeam(members);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [companyId]);
+
+  const handleCopyLink = () => {
+      navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
   };
-  // --- END NEW FUNCTION ---
+
+  const handleSaveQuota = async (userId, newQuota) => {
+      try {
+          await setDoc(doc(db, "companies", companyId, "team", userId), {
+              dailyQuota: Number(newQuota),
+              updatedAt: new Date()
+          }, { merge: true });
+      } catch (err) { alert("Error saving quota"); }
+  };
 
   return (
-    <div 
-      className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 backdrop-blur-sm" 
-      onClick={onClose}
-    >
-      <div 
-        className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border border-gray-200 flex flex-col max-h-[80vh]" 
-        onClick={e => e.stopPropagation()}
-      >
-        <header className="p-5 border-b border-gray-200 flex justify-between items-center shrink-0">
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-            <UserPlus />
-            Manage Team
-          </h2>
-          <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </header>
-
-        {/* --- Main Content --- */}
-        <div className="p-5 bg-gray-50 overflow-y-auto flex-1 min-h-0">
-          
-          {/* --- 4. THIS IS THE UPDATED FORM --- */}
-          <form className="mb-6" onSubmit={handleInviteUser}>
-            <h3 className="text-lg font-semibold text-gray-700">Invite New User</h3>
-            <div className="p-4 border border-gray-200 bg-white rounded-lg mt-2 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="newUserName" className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    id="newUserName"
-                    value={newUserName}
-                    onChange={(e) => setNewUserName(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg"
-                    placeholder="Jane Doe"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="newUserEmail" className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    id="newUserEmail"
-                    value={newUserEmail}
-                    onChange={(e) => setNewUserEmail(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg"
-                    placeholder="jane.doe@company.com"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="newUserPassword" className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
-                  <input
-                    type="password"
-                    id="newUserPassword"
-                    value={newUserPassword}
-                    onChange={(e) => setNewUserPassword(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg"
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="newUserRole" className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <select 
-                    id="newUserRole"
-                    value={newUserRole}
-                    onChange={(e) => setNewUserRole(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg bg-white"
-                  >
-                    <option value="hr_user">HR User (View Only)</option>
-                    <option value="company_admin">Company Admin (Full Access)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center">
-                {inviteError && <p className="text-sm text-red-600">{inviteError}</p>}
-                {inviteSuccess && <p className="text-sm text-green-600">{inviteSuccess}</p>}
-                <button
-                  type="submit"
-                  disabled={isInviting}
-                  className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isInviting ? <Loader2 className="animate-spin" size={18} /> : <Send size={16} />}
-                  {isInviting ? 'Sending Invite...' : 'Send Invite'}
-                </button>
-              </div>
-            </div>
-          </form>
-          {/* --- END UPDATED FORM --- */}
-          
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200 flex flex-col max-h-[90vh]">
+        
+        {/* Header */}
+        <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50 rounded-t-xl">
           <div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">Current Team Members</h3>
-            {loading ? (
-              <div className="flex justify-center p-4">
-                <Loader2 className="animate-spin text-blue-600" />
-              </div>
-            ) : error ? (
-              <p className="text-red-600">{error}</p>
-            ) : teamMembers.length === 0 ? (
-              <p className="text-center text-gray-500 p-8">
-                No team members have been assigned to this company.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {teamMembers.map(({ user, membership }) => (
-                  <TeamMemberRow 
-                    key={user.id} 
-                    user={user} 
-                    membership={membership}
-                    onRemoveSuccess={fetchTeam}
-                  />
-                ))}
-              </div>
-            )}
+            <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+              <Users className="text-blue-600" /> Manage Team
+            </h2>
+            <p className="text-sm text-gray-500">Invite members and set daily goals.</p>
           </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full"><X size={20}/></button>
         </div>
 
-        {/* --- Footer --- */}
-        <footer className="p-4 bg-gray-50 border-t border-gray-200 flex justify-end items-center rounded-b-xl shrink-0">
-          <button 
-            className="px-5 py-2 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-all" 
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </footer>
+        <div className="flex-1 overflow-y-auto p-6 space-y-8">
+            
+            {/* --- INVITE LINK SECTION --- */}
+            <div className="bg-blue-600 p-5 rounded-xl text-white shadow-md">
+                <div className="flex justify-between items-start mb-2">
+                    <div>
+                        <h3 className="font-bold text-lg flex items-center gap-2"><LinkIcon size={20}/> Invite Link</h3>
+                        <p className="text-blue-100 text-sm">Share this link with your recruiters to let them join automatically.</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 bg-blue-700 p-2 rounded-lg border border-blue-500">
+                    <code className="flex-1 text-sm truncate text-blue-100 font-mono">{inviteUrl}</code>
+                    <button 
+                        onClick={handleCopyLink}
+                        className="px-3 py-1.5 bg-white text-blue-700 text-xs font-bold rounded shadow-sm flex items-center gap-1 hover:bg-blue-50 transition"
+                    >
+                        {copied ? <CheckCircle size={14}/> : <Copy size={14}/>}
+                        {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                </div>
+            </div>
+
+            {/* --- TEAM LIST --- */}
+            <div>
+                <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">Team Members ({team.length})</h3>
+                {loading ? (
+                    <div className="text-center py-8 text-gray-500"><Loader2 className="animate-spin mx-auto mb-2"/> Loading team...</div>
+                ) : team.length === 0 ? (
+                    <p className="text-center text-gray-400 italic py-4">No members found. Send the invite link above!</p>
+                ) : (
+                    <div className="space-y-3">
+                        {team.map(member => (
+                            <div key={member.id} className="flex flex-col md:flex-row items-center justify-between p-4 bg-white border border-gray-200 rounded-lg shadow-sm gap-4">
+                                <div className="flex items-center gap-3 w-full md:w-auto">
+                                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 font-bold">
+                                        {member.name ? member.name.charAt(0).toUpperCase() : '?'}
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-gray-900">{member.name || 'Unknown'}</p>
+                                        <p className="text-xs text-gray-500 flex items-center gap-1">
+                                            <Mail size={10}/> {member.email}
+                                            <span className="mx-1">•</span>
+                                            <span className="uppercase font-semibold text-blue-600">{member.role.replace('_', ' ')}</span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* QUOTA SETTING */}
+                                <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                    <Target size={16} className="text-gray-400"/>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase">Daily Call Goal</p>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                className="w-16 p-1 text-sm border border-gray-300 rounded text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                defaultValue={member.quota}
+                                                onBlur={(e) => handleSaveQuota(member.id, e.target.value)}
+                                            />
+                                            <span className="text-xs text-gray-500">calls</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+        </div>
       </div>
     </div>
   );

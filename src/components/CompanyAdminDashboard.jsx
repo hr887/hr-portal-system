@@ -11,7 +11,9 @@ import { ManageTeamModal } from './ManageTeamModal.jsx';
 import { DriverSearchModal } from './admin/DriverSearchModal.jsx';
 import { NotificationBell } from './feedback/NotificationBell.jsx'; 
 import { CallOutcomeModal } from './modals/CallOutcomeModal.jsx'; 
-import { CompanyBulkUpload } from './CompanyBulkUpload.jsx';
+import { CompanyBulkUpload } from './CompanyBulkUpload.jsx'; 
+// --- NEW WIDGET IMPORT ---
+import { PerformanceWidget } from './admin/PerformanceWidget.jsx';
 import { LogOut, Search, ChevronDown, Users, FileText, CheckSquare, Settings, Zap, ChevronUp, UserPlus, Replace, Phone, Upload, Database } from 'lucide-react';
 
 function StatCard({ title, value, icon, active, onClick, colorClass }) {
@@ -106,12 +108,7 @@ export function CompanyAdminDashboard() {
       
       setApplications(appList);
 
-      // --- FIXED SPLIT LOGIC ---
-      // 1. Company Leads = Explicitly have source 'Company Import'
       const cLeads = allLeads.filter(l => l.source === 'Company Import');
-      
-      // 2. Platform Leads = Everything else in the leads collection
-      // (Since we only have two sources: Platform or Import)
       const pLeads = allLeads.filter(l => l.source !== 'Company Import');
 
       setPlatformLeads(pLeads);
@@ -214,7 +211,10 @@ export function CompanyAdminDashboard() {
         </header>
 
         <div className="container mx-auto p-4 sm:p-8 shrink-0">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+             
+             {/* --- LEFT: STAT CARDS (TABS) --- */}
+             <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <StatCard 
                     title="Direct Applications" 
                     value={applications.length} 
@@ -239,11 +239,16 @@ export function CompanyAdminDashboard() {
                     colorClass="ring-green-500 bg-green-500"
                     onClick={() => setActiveTab('my_leads')}
                 />
+             </div>
+
+             {/* --- RIGHT: PERFORMANCE WIDGET --- */}
+             <div className="lg:col-span-4">
+                 <PerformanceWidget companyId={companyId} />
+             </div>
           </div>
         </div>
 
         <main className="container mx-auto px-4 sm:px-8 pb-8 grid grid-cols-1 lg:grid-cols-12 gap-8 overflow-hidden flex-1 min-h-0">
-          {/* --- LEFT LIST --- */}
           <div className="lg:col-span-5 xl:col-span-4 flex flex-col min-h-0">
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden flex-1 flex flex-col h-full">
               <div className="p-5 border-b border-gray-200 bg-gray-50">
@@ -273,8 +278,8 @@ export function CompanyAdminDashboard() {
                       const name = `${getFieldValue(item['firstName'])} ${getFieldValue(item['lastName'])}`;
                       const isSelected = selectedApp?.id === item.id;
                       
-                      const isPlatform = activeTab === 'find_driver';
-                      const isCompany = activeTab === 'my_leads';
+                      const isPlatform = item.isPlatformLead === true;
+                      const isCompany = item.source === 'Company Import' || (!isPlatform && activeTab === 'my_leads');
 
                       return (
                          <tr key={item.id} onClick={() => setSelectedApp(item)} className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
@@ -315,22 +320,20 @@ export function CompanyAdminDashboard() {
              </div>
           </div>
 
-          {/* --- RIGHT DETAIL PANEL --- */}
           <div className="lg:col-span-7 xl:col-span-8 min-h-0">
             {selectedApp ? (
-               // IF it is a Platform Lead OR Company Lead -> Show Simple Card
-               (activeTab === 'find_driver' || activeTab === 'my_leads') ? (
+               (selectedApp.isPlatformLead === true || selectedApp.source === 'Company Import' || activeTab === 'my_leads') ? (
                   <div className="bg-white rounded-xl shadow-lg border border-gray-200 h-full p-8 overflow-y-auto">
                        <div className="flex items-center gap-3 mb-6">
-                          <div className={`p-3 rounded-full ${activeTab === 'find_driver' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
-                              {activeTab === 'find_driver' ? <Zap size={32} /> : <Database size={32} />}
+                          <div className={`p-3 rounded-full ${selectedApp.isPlatformLead ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
+                              {selectedApp.isPlatformLead ? <Zap size={32} /> : <Database size={32} />}
                           </div>
                           <div>
                               <h2 className="text-2xl font-bold text-gray-900">
-                                  {activeTab === 'find_driver' ? 'SafeHaul Driver Lead' : 'Company Imported Lead'}
+                                  {selectedApp.isPlatformLead ? 'SafeHaul Driver Lead' : 'Company Imported Lead'}
                               </h2>
                              <p className="text-gray-500">
-                                 {activeTab === 'find_driver' ? 'Matched via SafeHaul network.' : 'Uploaded by your team.'}
+                                 {selectedApp.isPlatformLead ? 'Matched via SafeHaul network.' : 'Uploaded by your team.'}
                              </p>
                            </div>
                       </div>
@@ -363,7 +366,6 @@ export function CompanyAdminDashboard() {
                       </div>
                   </div>
                ) : (
-                  // IF it is a Direct Application -> Show Full Detail View
                   <ApplicationDetailView
                     key={selectedApp.id}
                     companyId={companyId}
