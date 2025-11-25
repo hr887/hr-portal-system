@@ -3,12 +3,23 @@
 const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const nodemailer = require('nodemailer'); // <--- NEW IMPORT
 
 // Initialize the Firebase Admin App once
 admin.initializeApp();
 
+// --- CONFIGURATION: EMAIL SETTINGS ---
+// TODO: Replace these with your actual email details or use Environment Variables
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'hr@raystarllc.com', // <--- PUT YOUR GMAIL HERE
+        pass: 'tdfm vtvb gieq craw'     // <--- PUT YOUR GMAIL APP PASSWORD HERE
+    }
+});
+
 // --- SHARED HELPER: Create/Update Driver Profile ---
-// This helper function ensures driver data is synced to their master profile
 async function processDriverData(data) {
   const db = admin.firestore();
   const email = data.email;
@@ -18,9 +29,7 @@ async function processDriverData(data) {
 
   let driverUid;
 
-  // 1. Find or Create Auth User
   try {
-    // Try to create a new user
     const newDriverAuth = await admin.auth().createUser({
       email: email,
       emailVerified: true,
@@ -28,11 +37,8 @@ async function processDriverData(data) {
       phoneNumber: phone || undefined
     });
     driverUid = newDriverAuth.uid;
-    console.log(`Created new Auth user for: ${email}`);
   } catch (error) {
-    // If user already exists, find them
     if (error.code === 'auth/email-already-exists') {
-      console.log(`User already exists for: ${email}`);
       try {
         const existingUser = await admin.auth().getUserByEmail(email);
         driverUid = existingUser.uid;
@@ -46,10 +52,8 @@ async function processDriverData(data) {
     }
   }
 
-  // 2. Create/Update Master Profile in Firestore
   const driverDocRef = db.collection("drivers").doc(driverUid);
   
-  // Map fields from either Lead or Application format
   const masterProfileData = {
     personalInfo: {
       firstName: data.firstName || "",
@@ -65,7 +69,6 @@ async function processDriverData(data) {
       zip: data.zip || ""
     },
     qualifications: {
-      // Handle 'experience' (Lead form) OR 'experience-years' (App form)
       experienceYears: data.experience || data['experience-years'] || "",
       legalWork: data['legal-work'] || "yes",
       englishFluency: data['english-fluency'] || "yes",
@@ -81,29 +84,89 @@ async function processDriverData(data) {
         twicExpiration: data.twicExpiration || "",
       }
     ],
-    // Common lists
     workHistory: data.employers || [],
     accidentHistory: data.accidents || [],
     violations: data.violations || [],
-
-    // Metadata
     lastApplicationDate: admin.firestore.FieldValue.serverTimestamp(),
     lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
   };
 
-  // Use set with merge: true to update without overwriting existing data
   await driverDocRef.set(masterProfileData, { merge: true });
-  console.log(`Successfully synced profile for ${email} with UID ${driverUid}`);
 }
 
+async function runDistributionLogic() {
+    const db = admin.firestore();
+    let totalDistributed = 0;
+    let log = [];
 
-// --- EXPORT 1: Create Portal User (Admin Only) ---
+    try {
+        const companiesSnap = await db.collection('companies').get();
+        const driversSnap = await db.collection('drivers')
+            .where('driverProfile.availability', '==', 'actively_looking')
+            .where('driverProfile.isBulkUpload', '==', true)
+            .get();
+
+        const allAvailableDrivers = driversSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        for (const companyDoc of companiesSnap.docs) {
+            const companyId = companyDoc.id;
+            const companyData = companyDoc.data();
+            
+            const planType = companyData.planType || 'free';
+            const dailyQuota = planType === 'paid' ? 200 : 50;
+            
+            let assignedCount = 0;
+            const batch = db.batch(); 
+
+            for (const driver of allAvailableDrivers) {
+                if (assignedCount >= dailyQuota) break; 
+
+                const distributedList = driver.distributedTo || [];
+                
+                if (!distributedList.includes(companyId)) {
+                    const leadRef = db.collection('companies').doc(companyId).collection('leads').doc();
+                    const leadData = {
+                        driverId: driver.id,
+                        firstName: driver.personalInfo.firstName,
+                        lastName: driver.personalInfo.lastName,
+                        email: driver.personalInfo.email,
+                        phone: driver.personalInfo.phone,
+                        experience: driver.qualifications.experienceYears,
+                        driverType: driver.driverProfile.type || 'unidentified',
+                        status: 'New Lead',
+                        isPlatformLead: true,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        distributedAt: admin.firestore.FieldValue.serverTimestamp()
+                    };
+                    batch.set(leadRef, leadData);
+
+                    const driverRef = db.collection('drivers').doc(driver.id);
+                    batch.update(driverRef, {
+                        distributedTo: admin.firestore.FieldValue.arrayUnion(companyId)
+                    });
+                    
+                    driver.distributedTo = [...distributedList, companyId];
+                    assignedCount++;
+                    totalDistributed++;
+                }
+            }
+
+            if (assignedCount > 0) {
+                await batch.commit();
+                log.push(`Assigned ${assignedCount} leads to ${companyData.companyName}.`);
+            }
+        }
+        return { totalDistributed, log };
+    } catch (error) {
+        console.error("Distribution Logic Error:", error);
+        throw error;
+    }
+}
+
+// --- EXPORT 1: Create Portal User ---
 exports.createPortalUser = onCall(async (request) => {
   const { fullName, email, password, companyId, role } = request.data;
-
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "You must be logged in to create a user.");
-  }
+  if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
 
   const callerClaims = request.auth.token.roles || {};
   const isSuperAdmin = callerClaims.globalRole === "super_admin";
@@ -114,9 +177,7 @@ exports.createPortalUser = onCall(async (request) => {
     newRoleClaims = { globalRole: "super_admin" };
   } else if (role === "company_admin" || role === "hr_user") {
     const isAdminForThisCompany = callerClaims[companyId] === "company_admin";
-    if (!isSuperAdmin && !isAdminForThisCompany) {
-        throw new HttpsError("permission-denied", "Permission denied.");
-    }
+    if (!isSuperAdmin && !isAdminForThisCompany) throw new HttpsError("permission-denied", "Permission denied.");
     newRoleClaims = { [companyId]: role };
   } else {
     throw new HttpsError("invalid-argument", "Invalid role.");
@@ -144,8 +205,6 @@ exports.createPortalUser = onCall(async (request) => {
 // --- EXPORT 2: Get Company Profile ---
 exports.getCompanyProfile = onCall((request) => {
   const companyId = request.data.companyId;
-  if (!companyId) throw new HttpsError("invalid-argument", "No companyId provided.");
-  
   return admin.firestore().collection('companies').doc(companyId).get()
     .then(doc => {
         if (!doc.exists) throw new HttpsError("not-found", "Company not found.");
@@ -157,12 +216,7 @@ exports.getCompanyProfile = onCall((request) => {
 exports.moveApplication = onCall(async (request) => {
   const { sourceCompanyId, destinationCompanyId, applicationId, isSourceNested } = request.data;
   const db = admin.firestore();
-  
-  // Handle path logic (Nested vs Root) - defaulting to nested for company apps
-  const sourcePath = isSourceNested 
-    ? `companies/${sourceCompanyId}/applications/${applicationId}` 
-    : `applications/${applicationId}`;
-    
+  const sourcePath = isSourceNested ? `companies/${sourceCompanyId}/applications/${applicationId}` : `applications/${applicationId}`;
   const destRef = db.doc(`companies/${destinationCompanyId}/applications/${applicationId}`);
   const sourceRef = db.doc(sourcePath);
   
@@ -176,20 +230,76 @@ exports.moveApplication = onCall(async (request) => {
   batch.set(destRef, appData); 
   batch.delete(sourceRef);     
   await batch.commit();
-  
   return { status: "success", message: "Moved." };
 });
 
-// --- EXPORT 4: Trigger on Company Application ---
-// This runs when a full application is submitted to a company
+// --- EXPORT 4: Triggers ---
 exports.onApplicationSubmitted = onDocumentCreated("companies/{companyId}/applications/{applicationId}", async (event) => {
   if (!event.data) return;
   await processDriverData(event.data.data());
 });
 
-// --- EXPORT 5: Trigger on General Lead ---
-// This runs when a quick lead is submitted on the home page
 exports.onLeadSubmitted = onDocumentCreated("leads/{leadId}", async (event) => {
   if (!event.data) return;
   await processDriverData(event.data.data());
+});
+
+// --- EXPORT 5: Manual Distribution ---
+exports.distributeDailyLeads = onCall(async (request) => {
+    if (!request.auth || request.auth.token.roles.globalRole !== 'super_admin') {
+        throw new HttpsError('permission-denied', 'Only Super Admin can distribute leads.');
+    }
+    const result = await runDistributionLogic();
+    return { 
+        status: 'success', 
+        message: `Distributed ${result.totalDistributed} leads total.`,
+        details: result.log 
+    };
+});
+
+// --- EXPORT 6: Scheduled Distribution ---
+exports.distributeLeadsScheduled = onSchedule("every day 00:00", async (event) => {
+    console.log("⏰ Starting scheduled lead distribution...");
+    const result = await runDistributionLogic();
+    console.log(`✅ Distribution complete. Assigned: ${result.totalDistributed}`);
+});
+
+// --- EXPORT 7: Send Driver Invite (NEW!) ---
+exports.sendDriverInvite = onCall(async (request) => {
+    const { driverEmail, driverName, companyName, message } = request.data;
+
+    // 1. Validation
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in.');
+    if (!driverEmail) throw new HttpsError('invalid-argument', 'Driver email missing.');
+
+    // 2. Prepare Email
+    const mailOptions = {
+        from: `"${companyName}" <noreply@truckerapp.com>`,
+        to: driverEmail,
+        subject: `Job Opportunity at ${companyName}`,
+        text: message || `Hi ${driverName},\n\n${companyName} has viewed your profile and would like to invite you to apply for a driving position.\n\nPlease contact us to proceed.\n\nBest,\n${companyName}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #2563eb;">Job Invite from ${companyName}</h2>
+                <p>Hi <strong>${driverName}</strong>,</p>
+                <p>We reviewed your profile on the SafeHaul network and are impressed with your experience.</p>
+                <p style="background-color: #f3f4f6; padding: 15px; border-radius: 5px;">
+                    ${message || "We would like to invite you to apply for a driving position with our company."}
+                </p>
+                <p>Please reply to this email or contact us directly to move forward.</p>
+                <br/>
+                <p style="color: #6b7280; font-size: 12px;">Sent via SafeHaul Platform</p>
+            </div>
+        `
+    };
+
+    // 3. Send
+    try {
+        await transporter.sendMail(mailOptions);
+        return { success: true, message: "Email sent successfully!" };
+    } catch (error) {
+        console.error("Email send failed:", error);
+        // Don't crash the frontend, but return error info
+        return { success: false, error: error.message };
+    }
 });

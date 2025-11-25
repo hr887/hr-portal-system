@@ -1,7 +1,7 @@
 // src/components/admin/ApplicationsView.jsx
 import React, { useState, useMemo } from 'react';
 import { getFieldValue, getStatusColor } from '../../utils/helpers.js';
-import { FileText, Search, ArrowDownUp } from 'lucide-react';
+import { FileText, Search, ArrowDownUp, Filter, Zap } from 'lucide-react';
 
 // --- Reusable Card Component ---
 function Card({ title, icon, children, className = '' }) {
@@ -17,7 +17,6 @@ function Card({ title, icon, children, className = '' }) {
     </div>
   );
 }
-// ---
 
 // --- Helper function for sorting ---
 const sortApplications = (apps, config) => {
@@ -26,14 +25,13 @@ const sortApplications = (apps, config) => {
   return [...apps].sort((a, b) => {
     let aVal, bVal;
     
-    // Get values based on sort key
     switch(key) {
       case 'name':
         aVal = `${a['firstName'] || ''} ${a['lastName'] || ''}`.toLowerCase().trim();
         bVal = `${b['firstName'] || ''} ${b['lastName'] || ''}`.toLowerCase().trim();
         break;
       case 'company':
-        aVal = a.companyName?.toLowerCase() || ''; // We'll add companyName in the memo
+        aVal = a.companyName?.toLowerCase() || '';
         bVal = b.companyName?.toLowerCase() || '';
         break;
       case 'state':
@@ -42,23 +40,16 @@ const sortApplications = (apps, config) => {
         break;
       case 'submittedAt':
       default:
-        // Use the Firestore timestamp for accurate date sorting
-        aVal = a.submittedAt?.seconds || 0;
-        bVal = b.submittedAt?.seconds || 0;
+        aVal = a.submittedAt?.seconds || a.createdAt?.seconds || 0;
+        bVal = b.submittedAt?.seconds || b.createdAt?.seconds || 0;
         break;
     }
 
-    // Compare values
-    if (aVal < bVal) {
-      return direction === 'asc' ? -1 : 1;
-    }
-    if (aVal > bVal) {
-      return direction === 'asc' ? 1 : -1;
-    }
+    if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+    if (aVal > bVal) return direction === 'asc' ? 1 : -1;
     return 0;
   });
 };
-// --- End Helper ---
 
 export function ApplicationsView({ 
   listLoading, 
@@ -69,29 +60,41 @@ export function ApplicationsView({
 }) {
   const [appSearch, setAppSearch] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'submittedAt', direction: 'desc' });
+  const [filterSource, setFilterSource] = useState('All'); // 'All', 'Company App', 'Added by Safehaul'
 
   const filteredApplications = useMemo(() => {
     const searchTerm = appSearch.toLowerCase();
     
-    // First, map applications to include companyName for searching/sorting
+    // Map applications
     const appsWithData = allApplications.map(app => ({
       ...app,
-      companyName: allCompaniesMap.get(app.companyId) || 'Unknown Company'
+      companyName: allCompaniesMap.get(app.companyId) || (app.companyId === 'general-leads' ? 'General Pool' : 'Unknown')
     }));
     
     // Filter logic
     const filtered = appsWithData.filter(app => {
+      // 1. Text Search
       const name = `${app['firstName'] || ''} ${app['lastName'] || ''}`.toLowerCase();
       const companyName = app.companyName.toLowerCase();
-      return (name.includes(searchTerm) ||
+      const matchesText = (name.includes(searchTerm) ||
               app.email?.toLowerCase().includes(searchTerm) ||
               companyName.includes(searchTerm));
+
+      // 2. Tab Filter
+      let matchesTab = true;
+      if (filterSource === 'Added by Safehaul') {
+          matchesTab = app.sourceType === 'Added by Safehaul';
+      } else if (filterSource === 'Company App') {
+          matchesTab = app.sourceType !== 'Added by Safehaul' && app.sourceType !== 'General Lead';
+      }
+
+      return matchesText && matchesTab;
     });
     
     // Sort logic
     return sortApplications(filtered, sortConfig);
     
-  }, [appSearch, allApplications, allCompaniesMap, sortConfig]);
+  }, [appSearch, allApplications, allCompaniesMap, sortConfig, filterSource]);
   
   const handleSortChange = (e) => {
     const [key, direction] = e.target.value.split(',');
@@ -99,7 +102,29 @@ export function ApplicationsView({
   };
 
   return (
-    <Card title="All Driver Applications" icon={<FileText size={22} />} className="w-full">
+    <Card title="Driver Applications" icon={<FileText size={22} />} className="w-full">
+      {/* --- Filters Row --- */}
+      <div className="bg-gray-50 px-5 py-3 border-b border-gray-200 flex gap-2">
+          <button 
+            onClick={() => setFilterSource('All')} 
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filterSource === 'All' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
+          >
+            All Drivers
+          </button>
+          <button 
+            onClick={() => setFilterSource('Company App')} 
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filterSource === 'Company App' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
+          >
+            Direct Applications
+          </button>
+          <button 
+            onClick={() => setFilterSource('Added by Safehaul')} 
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${filterSource === 'Added by Safehaul' ? 'bg-purple-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
+          >
+            <Zap size={12} /> Added by Safehaul
+          </button>
+      </div>
+
       <div className="p-5 border-b border-gray-200 flex flex-col sm:flex-row gap-4 justify-between">
         <div className="relative w-full sm:max-w-md">
           <input
@@ -125,8 +150,6 @@ export function ApplicationsView({
             <option value="name,desc">Driver Name (Z-A)</option>
             <option value="company,asc">Company Name (A-Z)</option>
             <option value="company,desc">Company Name (Z-A)</option>
-            <option value="state,asc">State (A-Z)</option>
-            <option value="state,desc">State (Z-A)</option>
           </select>
           <ArrowDownUp size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         </div>
@@ -144,18 +167,26 @@ export function ApplicationsView({
             <button 
               key={app.id} 
               className="w-full p-4 border border-gray-200 rounded-lg bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between text-left hover:border-blue-500 hover:shadow-md transition-all"
-              onClick={() => onAppClick(app)} // <-- UPDATED: Pass the whole app object
+              onClick={() => onAppClick(app)}
             >
               <div>
-                <h3 className="font-semibold text-lg text-gray-900">{`${getFieldValue(app['firstName'])} ${getFieldValue(app['lastName'])}`}</h3>
+                <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-lg text-gray-900">{`${getFieldValue(app['firstName'])} ${getFieldValue(app['lastName'])}`}</h3>
+                    {app.sourceType === 'Added by Safehaul' && <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded border border-purple-200">SAFEHAUL</span>}
+                </div>
                 <p className="text-sm text-gray-600">{getFieldValue(app.email)}</p>
                 <p className="text-sm text-gray-500 mt-1">
                   From: <span className="font-medium text-gray-700">{app.companyName}</span>
                 </p>
               </div>
-              <span className={`mt-2 sm:mt-0 px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(app.status || 'New Application')}`}>
-                {app.status || 'New Application'}
-              </span>
+              <div className="flex flex-col items-end gap-1">
+                <span className={`mt-2 sm:mt-0 px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(app.status || 'New Application')}`}>
+                    {app.status || 'New Application'}
+                </span>
+                <span className="text-xs text-gray-400">
+                     {app.createdAt ? new Date(app.createdAt.seconds * 1000).toLocaleDateString() : 'Recent'}
+                </span>
+              </div>
             </button>
           ))
         )}

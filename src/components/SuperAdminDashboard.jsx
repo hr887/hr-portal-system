@@ -1,7 +1,8 @@
 // src/components/SuperAdminDashboard.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../App.jsx';
-import { db } from '../firebase/config.js';
+import { db, functions } from '../firebase/config.js';
+import { httpsCallable } from "firebase/functions";
 import {
   doc,
   getDoc,
@@ -24,6 +25,9 @@ import {
   Building2,
   Search,
   X,
+  Upload,
+  Zap,
+  Database // Added Icon
 } from 'lucide-react';
 
 // Import Views & Modals
@@ -33,6 +37,7 @@ import { UsersView } from './admin/UsersView.jsx';
 import { CreateView } from './admin/CreateView.jsx';
 import { GlobalSearchResults } from './admin/GlobalSearchResults.jsx';
 import { ApplicationsView } from './admin/ApplicationsView.jsx';
+import { BulkLeadAddingView } from './admin/BulkLeadAddingView.jsx'; // <-- New Import
 
 import { EditCompanyModal } from './modals/EditCompanyModal.jsx';
 import { DeleteCompanyModal } from './modals/DeleteCompanyModal.jsx';
@@ -114,7 +119,7 @@ export function SuperAdminDashboard() {
       const companies = [];
       const companyMap = new Map();
 
-      // --- NEW: Add a "Virtual" Company for General Leads ---
+      // Add a "Virtual" Company for General Leads
       companyMap.set('general-leads', 'SafeHaul Pool (Unassigned)');
 
       companiesSnap.forEach((doc) => {
@@ -182,14 +187,31 @@ export function SuperAdminDashboard() {
         return {
           id: doc.id,
           ...data,
-          companyId: 'general-leads', // Assign to our virtual company
+          companyId: 'general-leads', 
           status: data.status || 'New Lead',
           sourceType: 'General Lead',
         };
       });
 
-      // C. Combine them
-      const combinedApps = [...brandedApps, ...generalLeads];
+      // C. Get Bulk Uploaded Drivers (from 'drivers' collection where isBulkUpload is true)
+      // This populates the "Added by Safehaul" list
+      const bulkSnap = await getDocs(collection(db, 'drivers')); 
+      // Note: In production with thousands, query for isBulkUpload == true. 
+      // For now, filtering client side to keep loadAllData simple.
+      const bulkLeads = bulkSnap.docs
+        .map(doc => ({id: doc.id, ...doc.data()}))
+        .filter(d => d.driverProfile?.isBulkUpload)
+        .map(d => ({
+            id: d.id,
+            ...d.personalInfo,
+            companyId: 'general-leads',
+            status: 'Bulk Lead',
+            sourceType: 'Added by Safehaul', // Matches your requested tab Name
+            createdAt: d.createdAt
+        }));
+
+      // Combine all sources
+      const combinedApps = [...brandedApps, ...generalLeads, ...bulkLeads];
 
       // Sort by date (newest first)
       combinedApps.sort((a, b) => {
@@ -275,14 +297,9 @@ export function SuperAdminDashboard() {
   const refreshAll = () => loadAllData();
 
   const handleAppClick = (app) => {
-    // If it's a lead, we might not have a company ID to query subcollections,
-    // but ApplicationDetailsModal usually expects real company IDs.
-    // For now, we handle standard apps. If you need to view Leads in detail,
-    // we'd need to update the Modal to handle root-level docs too.
-    if (app.sourceType === 'General Lead') {
-      alert(
-        'View/Edit for General Leads in the Admin Modal is coming next! Data is safe in the database.'
-      );
+    // Prevent opening modal for bulk leads (no application doc)
+    if (app.sourceType === 'General Lead' || app.sourceType === 'Added by Safehaul') {
+      alert('This is a lead, not a full application. Details can be viewed in the table.');
       return;
     }
 
@@ -290,6 +307,26 @@ export function SuperAdminDashboard() {
       companyId: app.companyId,
       appId: app.id,
     });
+  };
+
+  // --- Distribute Leads Handler ---
+  const handleDistributeLeads = async () => {
+    if(!window.confirm("Are you sure you want to distribute daily leads to ALL companies based on their plans (50/200)?")) return;
+    
+    try {
+        const distribute = httpsCallable(functions, 'distributeDailyLeads');
+        alert("Distribution started. This may take a moment...");
+        const result = await distribute();
+        
+        let msg = result.data.message;
+        if(result.data.details && result.data.details.length > 0) {
+            msg += "\n\nDetails:\n" + result.data.details.join("\n");
+        }
+        alert(msg);
+    } catch (e) {
+        console.error(e);
+        alert("Error distributing leads: " + e.message);
+    }
   };
 
   const renderActiveView = () => {
@@ -347,6 +384,10 @@ export function SuperAdminDashboard() {
             onAppClick={(app) => handleAppClick(app)}
           />
         );
+      case 'bulk-lead-adding': // <-- NEW CASE
+        return (
+            <BulkLeadAddingView onDataUpdate={refreshAll} />
+        );
       case 'create':
         return (
           <CreateView
@@ -398,10 +439,19 @@ export function SuperAdminDashboard() {
                 </button>
               )}
             </div>
+            
+            <div className="flex items-center gap-2">
+                <button 
+                    onClick={handleDistributeLeads}
+                    className="hidden sm:flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-bold rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+                >
+                    <Zap size={16} /> Distribute Leads
+                </button>
+            </div>
 
             <button
               id="logout-button-super"
-              className="px-3 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-all flex items-center gap-2"
+              className="px-3 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-all flex items-center gap-2 ml-2"
               onClick={handleLogout}
             >
               <LogOut size={18} />
@@ -445,6 +495,15 @@ export function SuperAdminDashboard() {
               isActive={activeView === 'applications' && !isSearching}
               onClick={() => {
                 setActiveView('applications');
+                setGlobalSearchQuery('');
+              }}
+            />
+            <NavItem
+              label="Bulk Lead Adding" // <-- New Tab Name
+              icon={<Database size={20} />}
+              isActive={activeView === 'bulk-lead-adding' && !isSearching}
+              onClick={() => {
+                setActiveView('bulk-lead-adding');
                 setGlobalSearchQuery('');
               }}
             />

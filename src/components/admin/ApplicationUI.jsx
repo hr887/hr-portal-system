@@ -1,66 +1,58 @@
 // src/components/admin/ApplicationUI.jsx
 import React from 'react';
-import { getFieldValue } from '../../utils/helpers.js';
-import { Paperclip, Download } from 'lucide-react'; // <-- FIX: Import Paperclip and Download
 
-// Reusable component for a "section" in the modal
-export function Section({ title, children }) {
+export function Section({ title, children, className = "" }) {
   return (
-    <div className="bg-white shadow-md rounded-lg border border-gray-200 overflow-hidden">
-      <h4 className="text-lg font-semibold text-gray-800 bg-gray-50 border-b border-gray-200 px-5 py-3">
-        {title}
-      </h4>
-      <div className="p-5">
-        <dl className="divide-y divide-gray-200">
-          {children}
-        </dl>
-      </div>
+    <div className={`bg-white p-6 rounded-lg shadow-sm border border-gray-200 ${className}`}>
+      {title && (
+        <h3 className="text-lg font-bold text-gray-800 mb-4 border-b border-gray-100 pb-2">
+          {title}
+        </h3>
+      )}
+      {children}
     </div>
   );
 }
 
-// Reusable component for a label/value "field"
-export function Field({ label, value }) {
-  const displayValue = getFieldValue(value);
-  const val = (displayValue === "Not Specified")
-    ? <span className="text-gray-400 italic">{displayValue}</span>
-    : <span className="text-gray-900">{displayValue}</span>;
-  
+export function InfoGrid({ children }) {
   return (
-    <div className="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-      <dt className="text-sm font-medium text-gray-500">{label}</dt>
-      <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">{val}</dd>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {children}
     </div>
   );
 }
 
-// --- UPDATED FileLink component ---
-// This now shows the file name and a separate "Download" button
-export function FileLink({ url, label, fileName }) {
-  const fName = getFieldValue(fileName);
-  
+export function InfoItem({ label, value, isEditing, onChange, type = "text", options = [] }) {
   return (
-    <div className="flex items-center justify-between gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-      <div className="flex items-center gap-2 overflow-hidden">
-        <Paperclip size={18} className="text-gray-500 shrink-0" />
-        <span className="text-sm text-gray-800 truncate" title={fName}>
-          {label} ({fName})
-        </span>
-      </div>
-      {url ? (
-        <a 
-          href={url} 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-medium flex items-center gap-1.5 shrink-0"
-        >
-          <Download size={14} />
-          View/Download
-        </a>
+    <div>
+      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+        {label}
+      </label>
+      
+      {isEditing ? (
+        options.length > 0 ? (
+          <select 
+            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            <option value="">Select...</option>
+            {options.map(opt => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type={type}
+            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        )
       ) : (
-        <span className="px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded-md font-medium shrink-0">
-          Not Available
-        </span>
+        <p className="text-lg font-medium text-gray-900 break-words">
+          {value || <span className="text-gray-300 italic">N/A</span>}
+        </p>
       )}
     </div>
   );

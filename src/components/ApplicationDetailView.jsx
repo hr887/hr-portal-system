@@ -1,13 +1,13 @@
 // src/components/ApplicationDetailView.jsx
 import React, { useState, useEffect } from 'react';
-import { getApplicationDoc, updateApplicationData, getCompanyProfile, deleteApplication, updateApplicationStatus, moveApplication } from '../firebase/firestore.js'; 
+import { getApplicationDoc, updateApplicationData, getCompanyProfile } from '../firebase/firestore.js'; 
 import { getFileUrl } from '../firebase/storage.js'; 
 import { storage } from '../firebase/config.js';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; 
 import { getFieldValue } from '../utils/helpers.js';
 import { generateApplicationPDF } from '../utils/pdfGenerator.js';
 import { useData } from '../App.jsx';
-import { Download, X, ArrowRight, Edit2, Save, Trash2, FileText, UserCheck, Folder, FileSignature, MessageSquare } from 'lucide-react';
+import { Download, X, ArrowRight, Edit2, Save, Trash2, FileText, UserCheck, Folder, FileSignature, MessageSquare, Phone } from 'lucide-react';
 
 // Child Components
 import { ApplicationInfo } from './admin/ApplicationInfo.jsx';
@@ -20,8 +20,8 @@ import { NotesTab } from './admin/NotesTab.jsx';
 const agreementTemplates = [
   { id: 'agreement-release', title: 'RELEASE AND WAIVER', text: `[COMPANY_NAME] is released from all liability in responding to inquiries and releasing information in connection with my application.` },
   { id: 'agreement-certify', title: 'CERTIFICATION', text: `My signature below certifies that this application was completed by me, and that all entries on it and information in it is true and complete to the best of my knowledge.` },
-  { id: 'agreement-auth-psp', title: 'AUTHORIZATION FOR PSP', text: `I authorize [COMPANY_NAME] ("Prospective Employer") to access the FMCSA Pre-Employment Screening Program (PSP) system to seek information regarding my commercial driving safety record and information regarding my safety inspection history. I understand that I am authorizing the release of safety performance information including crash data from the previous five (5) years and inspection history from the previous three (3) years. I understand and acknowledge that this release of information may assist the Prospective Employer to make a determination regarding my suitability as an employee.` },
-  { id: 'agreement-clearinghouse', title: 'CLEARINGHOUSE CONSENT', text: `I hereby provide consent to [COMPANY_NAME] to conduct a limited query of the FMCSA Commercial Driver's License Drug and Alcohol Clearinghouse (Clearinghouse) to determine whether drug or alcohol violation information about me exists in the Clearinghouse. This limited query may be conducted by [COMPANY_NAME] on a periodic basis throughout my employment and no less than at least once a year.` },
+  { id: 'agreement-auth-psp', title: 'AUTHORIZATION FOR PSP', text: `I authorize [COMPANY_NAME] ("Prospective Employer") to access the FMCSA Pre-Employment Screening Program (PSP) system to seek information regarding my commercial driving safety record and information regarding my safety inspection history.` },
+  { id: 'agreement-clearinghouse', title: 'CLEARINGHOUSE CONSENT', text: `I hereby provide consent to [COMPANY_NAME] to conduct a limited query of the FMCSA Commercial Driver's License Drug and Alcohol Clearinghouse.` },
 ];
 
 function TabButton({ label, icon, isActive, onClick }) {
@@ -46,7 +46,8 @@ export function ApplicationDetailView({
   applicationId, 
   onClosePanel, 
   onStatusUpdate,
-  isCompanyAdmin 
+  isCompanyAdmin,
+  onPhoneClick // <--- NEW: Receiving the call function from Dashboard
 }) {
   const { currentUserClaims } = useData();
   const [loading, setLoading] = useState(true);
@@ -137,7 +138,6 @@ export function ApplicationDetailView({
         try { await deleteObject(ref(storage, oldStoragePath)); } catch (e) {}
     }
 
-    // --- UPDATED STORAGE PATH: Includes companyId now ---
     const storagePath = `companies/${companyId}/applications/${applicationId}/${fieldKey}-${file.name}`;
     const fileRef = ref(storage, storagePath);
 
@@ -175,30 +175,8 @@ export function ApplicationDetailView({
 
   const handleSaveEdit = async () => {
     setIsSaving(true);
-    const fieldsToUpdate = [
-        'firstName', 'middleName', 'lastName', 'suffix', 'known-by-other-name', 'otherName', 'email', 
-        'phone', 'sms-consent', 'dob', 'ssn', 'street', 'city', 'state', 'zip', 'residence-3-years', 'prevStreet', 
-        'prevCity', 'prevState', 'prevZip', 'legal-work', 'english-fluency', 'experience-years',
-        'drug-test-positive', 'drug-test-explanation', 'dot-return-to-duty', 'cdlState',
-        'cdlClass', 'cdlNumber', 'cdlExpiration', 'endorsements', 'has-twic', 'twicExpiration',
-        'consent-mvr', 'revoked-licenses', 'driving-convictions', 'drug-alcohol-convictions',
-        'ein', 'driverInitials', 'businessName', 'businessStreet', 'businessCity', 'businessState', 'businessZip',
-        'expStraightTruckExp', 'expStraightTruckMiles', 'expSemiTrailerExp', 'expSemiTrailerMiles',
-        'expTwoTrailersExp', 'expTwoTrailersMiles', 'ec1Name', 'ec1Phone', 'ec1Relationship', 'ec1Address',
-        'ec2Name', 'ec2Phone', 'ec2Relationship', 'ec2Address', 'has-felony', 'felonyExplanation',
-        'hosDay1', 'hosDay2', 'hosDay3', 'hosDay4', 'hosDay5', 'hosDay6', 'hosDay7',
-        'lastRelievedDate', 'lastRelievedTime', 'agree-electronic', 'agree-background-check',
-        'agree-psp', 'agree-clearinghouse', 'final-certification', 'signature-date'
-    ];
-    
-    const dataToUpdate = {};
-    fieldsToUpdate.forEach(key => {
-        const value = appData[key];
-        dataToUpdate[key] = value === undefined ? null : value;
-    });
-
     try {
-        await updateApplicationData(companyId, applicationId, dataToUpdate);
+        await updateApplicationData(companyId, applicationId, appData);
         setIsEditing(false);
         onStatusUpdate(); 
     } catch (error) {
@@ -257,6 +235,7 @@ export function ApplicationDetailView({
             handleStatusUpdate={handleStatusUpdate}
             isCompanyAdmin={isCompanyAdmin} 
             isSuperAdmin={isSuperAdmin}
+            onPhoneClick={onPhoneClick} // <--- Passing the function down
           />
         );
       case 'dqFile': return <DQFileTab companyId={companyId} applicationId={applicationId} />;
@@ -274,7 +253,19 @@ export function ApplicationDetailView({
             <h3 id="modal-title" className="text-2xl font-bold text-gray-800">
               {loading ? "Loading..." : currentAppName}
             </h3>
-            {/* --- Send Offer Button --- */}
+            
+            {/* --- CALL BUTTON IN HEADER --- */}
+            {!loading && appData && appData.phone && (
+                <button 
+                    onClick={onPhoneClick}
+                    className="p-2 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
+                    title="Call Driver"
+                >
+                    <Phone size={20} />
+                </button>
+            )}
+
+            {/* Send Offer Button */}
             {['Approved', 'Background Check'].includes(currentStatus) && (
                 <button 
                     onClick={() => setShowOfferModal(true)}
@@ -339,7 +330,6 @@ export function ApplicationDetailView({
       {showDeleteConfirm && <DeleteConfirmModal appName={currentAppName} companyId={companyId} applicationId={applicationId} onClose={() => setShowDeleteConfirm(false)} onDeletionComplete={handleManagementComplete} />}
       {showMoveModal && isSuperAdmin && <MoveApplicationModal sourceCompanyId={companyId} applicationId={applicationId} onClose={() => setShowMoveModal(false)} onMoveComplete={handleManagementComplete} />}
       
-      {/* --- OFFER MODAL --- */}
       {showOfferModal && (
           <SendOfferModal
              companyId={companyId}
@@ -347,10 +337,7 @@ export function ApplicationDetailView({
              driverId={driverId}
              driverName={currentAppName}
              onClose={() => setShowOfferModal(false)}
-             onOfferSent={() => { 
-                 handleStatusUpdate('Offer Sent'); 
-                 loadApplication(); 
-             }}
+             onOfferSent={() => { handleStatusUpdate('Offer Sent'); loadApplication(); }}
           />
       )}
     </div>
