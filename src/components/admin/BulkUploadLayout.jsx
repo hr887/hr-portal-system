@@ -24,21 +24,23 @@ export function BulkUploadLayout({
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border border-gray-200 overflow-hidden min-h-[600px] flex flex-col">
+        {/* Fixed: Added max-h-[90vh] and flex-col to constrain height and enable internal scrolling */}
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl border border-gray-200 overflow-hidden max-h-[90vh] flex flex-col">
             
             {/* Header */}
-            <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+            <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
                 <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                     <Upload className="text-blue-600" /> {title}
                 </h2>
-                <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full"><X size={20}/></button>
+                <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X size={20}/></button>
             </div>
 
-            <div className="p-8 flex-1 flex flex-col">
+            {/* Content Body */}
+            <div className="p-6 flex-1 flex flex-col overflow-hidden">
                 
                 {/* STEP 1: UPLOAD */}
                 {step === 'upload' && (
-                    <div className="space-y-6 max-w-xl mx-auto w-full">
+                    <div className="space-y-6 max-w-xl mx-auto w-full h-full overflow-y-auto">
                          {/* Toggle */}
                          <div className="flex bg-gray-100 p-1 rounded-lg">
                             <button 
@@ -113,20 +115,20 @@ export function BulkUploadLayout({
 
                 {/* STEP 2: PREVIEW */}
                 {step === 'preview' && (
-                    <div className="flex flex-col h-full">
-                        <div className="flex justify-between items-center mb-4">
+                    <div className="flex flex-col h-full overflow-hidden">
+                        <div className="flex justify-between items-center mb-4 shrink-0">
                             <div>
                                 <h3 className="text-lg font-bold text-gray-800">Preview Data</h3>
                                 <p className="text-sm text-gray-500">Found {csvData.length} unique records ready to add.</p>
                             </div>
                             <div className="flex gap-3">
-                                <button onClick={reset} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium flex items-center gap-2">
+                                <button onClick={reset} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium flex items-center gap-2 transition-colors">
                                     <X size={18} /> Cancel
                                 </button>
                                 <button 
                                     onClick={onConfirm} 
                                     disabled={uploading}
-                                    className="px-6 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-md flex items-center gap-2 disabled:opacity-50"
+                                    className="px-6 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-md flex items-center gap-2 disabled:opacity-50 transition-all"
                                 >
                                     {uploading ? <Loader2 className="animate-spin" /> : <Save size={18} />}
                                     {uploading ? 'Processing...' : 'Confirm & Merge'}
@@ -134,29 +136,40 @@ export function BulkUploadLayout({
                             </div>
                         </div>
                         
-                        {uploading && <p className="text-blue-600 font-semibold text-center py-2 animate-pulse">{progress}</p>}
+                        {uploading && <p className="text-blue-600 font-semibold text-center py-2 animate-pulse shrink-0">{progress}</p>}
 
-                        <div className="overflow-x-auto border border-gray-200 rounded-lg flex-1 relative">
+                        {/* Fixed: Table Container with overflow-auto and flex-1 */}
+                        <div className="border border-gray-200 rounded-lg flex-1 overflow-auto relative shadow-inner bg-gray-50">
                             <table className="w-full text-left text-sm text-gray-600">
-                                <thead className="bg-gray-50 text-gray-900 font-semibold sticky top-0 shadow-sm z-10">
+                                <thead className="bg-white text-gray-900 font-bold sticky top-0 shadow-sm z-10">
                                     <tr>
-                                        <th className="p-3 border-b bg-gray-50">First Name</th>
-                                        <th className="p-3 border-b bg-gray-50">Last Name</th>
-                                        <th className="p-3 border-b bg-gray-50">Email</th>
-                                        <th className="p-3 border-b bg-gray-50">Phone</th>
-                                        <th className="p-3 border-b bg-gray-50">Type</th>
+                                        <th className="p-3 border-b w-1/5">First Name</th>
+                                        <th className="p-3 border-b w-1/5">Last Name</th>
+                                        <th className="p-3 border-b w-1/4">Email</th>
+                                        <th className="p-3 border-b w-1/5">Phone</th>
+                                        <th className="p-3 border-b w-1/6">Type</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-100">
+                                <tbody className="divide-y divide-gray-100 bg-white">
                                     {csvData.map((row, idx) => (
-                                        <tr key={idx} className="hover:bg-gray-50">
+                                        <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
                                             <td className="p-3 font-medium text-gray-900">{row.firstName}</td>
                                             <td className="p-3">{row.lastName}</td>
                                             <td className="p-3">
-                                                {row.isEmailPlaceholder ? <span className="text-yellow-600 italic text-xs flex items-center gap-1"><AlertCircle size={10}/> Auto-ID</span> : row.email}
+                                                {row.isEmailPlaceholder ? (
+                                                    <span className="text-yellow-600 italic text-xs flex items-center gap-1">
+                                                        <AlertCircle size={12}/> Auto-ID
+                                                    </span>
+                                                ) : (
+                                                    <span className="truncate block max-w-[200px]" title={row.email}>{row.email}</span>
+                                                )}
                                             </td>
-                                            <td className="p-3">{row.phone || <span className="text-gray-300">--</span>}</td>
-                                            <td className="p-3">{row.driverType}</td>
+                                            <td className="p-3 font-mono text-xs">{row.phone || <span className="text-gray-300">--</span>}</td>
+                                            <td className="p-3">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${row.driverType === 'unidentified' ? 'bg-gray-100 text-gray-500' : 'bg-blue-100 text-blue-700'}`}>
+                                                    {row.driverType}
+                                                </span>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -168,19 +181,19 @@ export function BulkUploadLayout({
                 {/* STEP 3: SUCCESS */}
                 {step === 'success' && (
                     <div className="text-center py-20 h-full flex flex-col items-center justify-center">
-                        <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-in zoom-in duration-300">
                             <CheckCircle size={40} />
                         </div>
                         <h3 className="text-2xl font-bold text-gray-900">Import & Merge Complete!</h3>
-                        <p className="text-gray-500 mt-2">
+                        <p className="text-gray-500 mt-2 mb-8">
                             <span className="font-bold text-green-600">{stats?.created || 0} New</span> leads added.<br/>
                             <span className="font-bold text-blue-600">{stats?.updated || 0} Existing</span> leads updated.
                         </p>
-                        <div className="flex gap-4 justify-center mt-8">
-                            <button onClick={reset} className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-bold hover:bg-gray-200">
+                        <div className="flex gap-4 justify-center">
+                            <button onClick={reset} className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-bold hover:bg-gray-200 transition-colors">
                                 Upload More
                             </button>
-                            <button onClick={onClose} className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-md">
+                            <button onClick={onClose} className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-md transition-colors">
                                 Done
                             </button>
                         </div>
