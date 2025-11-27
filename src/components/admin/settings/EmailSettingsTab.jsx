@@ -3,8 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from '../../../firebase/config';
 import { Save, Loader2, AlertTriangle, MessageSquare, Zap } from 'lucide-react';
+import { useToast } from '../../feedback/ToastProvider'; // <-- NEW IMPORT
 
-export function EmailSettingsTab({ currentCompanyProfile, onShowSuccess }) {
+export function EmailSettingsTab({ currentCompanyProfile }) {
+    const { showSuccess, showError } = useToast(); // <-- Use Toast Hook
     const [emailSettings, setEmailSettings] = useState({
         provider: 'gmail',
         email: '',
@@ -39,10 +41,10 @@ export function EmailSettingsTab({ currentCompanyProfile, onShowSuccess }) {
         try {
             const companyRef = doc(db, "companies", currentCompanyProfile.id);
             await updateDoc(companyRef, { emailSettings });
-            onShowSuccess('Email settings updated.');
+            showSuccess('Email settings updated successfully.');
         } catch (error) {
             console.error("Error saving email settings:", error);
-            alert("Failed to save email settings.");
+            showError("Failed to save email settings.");
         } finally {
             setLoading(false);
         }

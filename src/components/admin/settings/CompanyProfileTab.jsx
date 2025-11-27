@@ -4,6 +4,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from '../../../firebase/config';
 import { Building, Save, Loader2, DollarSign, Clock } from 'lucide-react';
+import { useToast } from '../../feedback/ToastProvider'; // <-- NEW IMPORT
 
 // --- CONSTANTS ---
 const HOME_TIME_OPTIONS = ["Daily", "Weekends", "Weekly", "Bi-Weekly", "Monthly", "OTR"];
@@ -84,7 +85,8 @@ const StructuredOfferForm = ({ id, label, checked, offerData, onCheckChange, onD
     );
 };
 
-export function CompanyProfileTab({ currentCompanyProfile, onShowSuccess }) {
+export function CompanyProfileTab({ currentCompanyProfile }) {
+    const { showSuccess, showError } = useToast();
     const [compData, setCompData] = useState({});
     const [loading, setLoading] = useState(false);
     const [logoUploading, setLogoUploading] = useState(false);
@@ -120,10 +122,10 @@ export function CompanyProfileTab({ currentCompanyProfile, onShowSuccess }) {
                 hiringPreferences: compData.hiringPreferences,
                 structuredOffers: compData.structuredOffers
             });
-            onShowSuccess('Company settings saved.');
+            showSuccess('Company settings saved successfully.');
         } catch (error) {
             console.error("Save failed", error);
-            alert("Failed to save settings.");
+            showError("Failed to save settings: " + error.message);
         } finally {
             setLoading(false);
         }
@@ -141,10 +143,10 @@ export function CompanyProfileTab({ currentCompanyProfile, onShowSuccess }) {
             const companyRef = doc(db, "companies", currentCompanyProfile.id);
             await updateDoc(companyRef, { companyLogoUrl: downloadURL });
             setCompData(prev => ({ ...prev, companyLogoUrl: downloadURL }));
-            onShowSuccess("Logo uploaded!");
+            showSuccess("Logo uploaded successfully!");
         } catch (error) {
             console.error("Logo failed", error);
-            alert("Logo upload failed.");
+            showError("Logo upload failed: " + error.message);
         } finally {
             setLogoUploading(false);
         }

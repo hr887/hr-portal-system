@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useData } from '../App.jsx';
 import { auth } from '../firebase/config.js';
 import { getPortalUser } from '../firebase/firestore.js'; 
+import { useToast } from './feedback/ToastProvider'; // <-- NEW IMPORT
 
 // --- CUSTOM HOOKS & COMPONENTS ---
 import { useCompanyDashboard } from '../hooks/useCompanyDashboard';
@@ -23,6 +24,7 @@ import {
 
 export function CompanyAdminDashboard() {
   const { currentCompanyProfile, handleLogout, returnToCompanyChooser, currentUserClaims } = useData();
+  const { showError } = useToast(); // <-- Use Toast Hook
   const navigate = useNavigate();
   const companyId = currentCompanyProfile?.id;
   const companyName = currentCompanyProfile?.companyName;
@@ -59,7 +61,8 @@ export function CompanyAdminDashboard() {
           window.location.href = `tel:${item.phone}`;
           setCallModalData({ lead: item });
       } else {
-          alert("No phone number available for this driver.");
+          // Replaced alert with professional toast
+          showError("No phone number available for this driver.");
       }
   };
 
@@ -183,7 +186,7 @@ export function CompanyAdminDashboard() {
                     searchQuery={dashboard.searchQuery}
                     setSearchQuery={dashboard.setSearchQuery}
                     
-                    // --- NEW FILTERS ---
+                    // --- FILTERS ---
                     filters={dashboard.filters}
                     setFilters={dashboard.setFilters}
 

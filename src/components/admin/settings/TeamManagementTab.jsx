@@ -3,8 +3,10 @@ import React, { useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase/config';
 import { UserPlus, Loader2, Plus } from 'lucide-react';
+import { useToast } from '../../feedback/ToastProvider'; // <-- NEW IMPORT
 
-export function TeamManagementTab({ currentCompanyProfile, isCompanyAdmin, onShowSuccess, onShowManageTeam }) {
+export function TeamManagementTab({ currentCompanyProfile, isCompanyAdmin, onShowManageTeam }) {
+    const { showSuccess, showError } = useToast(); // <-- Use Toast Hook
     const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'hr_user' });
     const [addUserLoading, setAddUserLoading] = useState(false);
 
@@ -20,11 +22,12 @@ export function TeamManagementTab({ currentCompanyProfile, isCompanyAdmin, onSho
                 companyId: currentCompanyProfile.id,
                 role: newUser.role
             });
-            onShowSuccess(`User ${newUser.fullName} created successfully!`);
+            
+            showSuccess(`User ${newUser.fullName} created successfully!`);
             setNewUser({ fullName: '', email: '', password: '', role: 'hr_user' });
         } catch (error) {
             console.error(error);
-            alert(error.message);
+            showError("Failed to create user: " + error.message);
         } finally {
             setAddUserLoading(false);
         }

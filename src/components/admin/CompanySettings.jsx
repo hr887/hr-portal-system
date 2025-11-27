@@ -6,7 +6,6 @@ import {
   Building, User, CreditCard, CheckCircle, 
   FileSignature, Blocks, ArrowLeft, Users, Mail
 } from 'lucide-react';
-
 // --- Import Sub-Components ---
 import { CompanyProfileTab } from './settings/CompanyProfileTab';
 import { TeamManagementTab } from './settings/TeamManagementTab';
@@ -38,10 +37,10 @@ const SectionHeader = ({ title, subtitle }) => (
 
 export function CompanySettings() {
   const { currentCompanyProfile, currentUser, currentUserClaims } = useData();
-  const [activeTab, setActiveTab] = useState('company'); 
+  const [activeTab, setActiveTab] = useState('company');
   const [successMsg, setSuccessMsg] = useState('');
   const [showManageTeam, setShowManageTeam] = useState(false);
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
 
   const isCompanyAdmin = currentUserClaims?.roles?.[currentCompanyProfile?.id] === 'company_admin' 
                          || currentUserClaims?.roles?.globalRole === 'super_admin';
@@ -74,6 +73,7 @@ export function CompanySettings() {
             return (
                 <PersonalProfileTab 
                     currentUser={currentUser}
+                    currentCompanyProfile={currentCompanyProfile} // <-- UPDATED: Added this prop
                     onShowSuccess={showSuccess}
                 />
             );
@@ -149,6 +149,7 @@ export function CompanySettings() {
                  
                  <h3 className="px-4 text-xs font-bold text-gray-400 uppercase tracking-wider mt-6 mb-2">Account</h3>
                  <SidebarItem id="billing" label="Billing & Plan" icon={CreditCard} activeTab={activeTab} onClick={setActiveTab} />
+                 <SidebarItem id="personal" label="Personal Profile" icon={User} activeTab={activeTab} onClick={setActiveTab} />
              </div>
           </aside>
           

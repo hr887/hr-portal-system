@@ -1,6 +1,6 @@
 // src/components/company/DashboardTable.jsx
 import React, { useState } from 'react';
-import { Search, Phone, ChevronLeft, ChevronRight, Loader2, Filter, X, MapPin, Truck, Calendar, User } from 'lucide-react';
+import { Search, Phone, ChevronLeft, ChevronRight, Filter, X, MapPin, Truck, Calendar, User } from 'lucide-react';
 import { getFieldValue, formatPhoneNumber } from '../../utils/helpers';
 
 // UPDATED: Only specific haul types
@@ -195,7 +195,35 @@ export function DashboardTable({
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
-              <tr><td colSpan="5" className="p-10 text-center text-gray-500"><Loader2 className="animate-spin mx-auto mb-2"/>Loading data...</td></tr>
+               // --- SKELETON LOADER ---
+               Array.from({ length: 5 }).map((_, i) => (
+                 <tr key={i} className="animate-pulse">
+                    <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0"></div>
+                            <div className="space-y-2 w-full">
+                                <div className="h-3 w-24 bg-gray-200 rounded"></div>
+                                <div className="h-2 w-16 bg-gray-200 rounded"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td className="px-6 py-4">
+                        <div className="h-5 w-20 bg-gray-200 rounded-full"></div>
+                    </td>
+                    <td className="px-6 py-4">
+                        <div className="space-y-2">
+                            <div className="h-3 w-28 bg-gray-200 rounded"></div>
+                            <div className="h-2 w-20 bg-gray-200 rounded"></div>
+                        </div>
+                    </td>
+                    <td className="px-6 py-4">
+                        <div className="h-4 w-24 bg-gray-200 rounded"></div>
+                    </td>
+                    <td className="px-6 py-4">
+                        <div className="h-3 w-16 bg-gray-200 rounded ml-auto"></div>
+                    </td>
+                 </tr>
+               ))
             ) : totalCount === 0 ? (
               <tr><td colSpan="5" className="p-10 text-center text-gray-400">No drivers found.</td></tr>
             ) : (

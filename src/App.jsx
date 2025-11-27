@@ -13,6 +13,7 @@ import { SuperAdminDashboard } from './components/SuperAdminDashboard.jsx';
 import { CompanyAdminDashboard } from './components/CompanyAdminDashboard.jsx';
 import { CompanySettings } from './components/admin/CompanySettings.jsx';
 import { CompanyChooserModal } from './components/CompanyChooserModal.jsx';
+import { ToastProvider } from './components/feedback/ToastProvider.jsx'; // <-- NEW IMPORT
 
 // --- GLOBAL CONTEXT ---
 const DataContext = createContext();
@@ -40,16 +41,12 @@ function AppContent() {
           // 2. Check Persistence (Local Storage)
           const savedCompanyId = localStorage.getItem('selectedCompanyId');
           
-          // Logic: If normal user (not super admin active view)
-          // Note: Super admins might want to persist too, but usually they work from their own dash.
-          // We'll allow persistence if the saved ID matches a role they have.
-          
           if (savedCompanyId) {
-             // Validate they still have access? (Optional, but good practice. loginToCompany will fail if doc doesn't exist or rules block it)
+             // Validate they still have access? (Optional, but good practice)
              await loginToCompany(savedCompanyId, null, true);
           } else {
              // No saved company. 
-             // If Super Admin, they go to Super Admin Dash (handled by RootRedirect).
+             // If Super Admin, they go to Super Admin Dash.
              // If Company User, show chooser.
              if (claims.roles?.globalRole !== 'super_admin' && !currentCompanyProfile) {
                  setShowCompanyChooser(true);
@@ -81,7 +78,6 @@ function AppContent() {
       if (companyDoc.exists()) {
         const companyData = { id: companyDoc.id, ...companyDoc.data() };
         setCurrentCompanyProfile(companyData);
-        
         // Persist selection
         localStorage.setItem('selectedCompanyId', companyId);
         
@@ -181,7 +177,6 @@ function AppContent() {
 
 function RootRedirect() {
   const { currentUser, currentUserClaims } = useData();
-  
   if (!currentUser) return <Navigate to="/login" />;
   
   if (currentUserClaims?.roles?.globalRole === 'super_admin') {
@@ -193,7 +188,6 @@ function RootRedirect() {
 
 function ProtectedRoute({ children, requiredRole }) {
   const { currentUser, currentUserClaims } = useData();
-
   if (!currentUser) return <Navigate to="/login" />;
 
   if (requiredRole === 'super_admin') {
@@ -207,8 +201,10 @@ function ProtectedRoute({ children, requiredRole }) {
 
 export default function App() {
   return (
-    <Router>
-      <AppContent />
-    </Router>
+    <ToastProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </ToastProvider>
   );
 }

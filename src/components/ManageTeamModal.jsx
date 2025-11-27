@@ -3,17 +3,31 @@ import React, { useState, useEffect } from 'react';
 import { X, User, Users, Mail, Target, Loader2, Link as LinkIcon, Copy, Phone, CheckCircle } from 'lucide-react';
 import { db } from '../firebase/config';
 import { collection, query, where, getDocs, doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
+import { useToast } from './feedback/ToastProvider'; // Assuming you added ToastProvider to HR portal
 
 export function ManageTeamModal({ companyId, onClose }) {
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Base Invite Link (Generic)
+  const baseInviteUrl = `${window.location.origin}/apply/${companyId}`; // Assuming slug is used, or handle dynamic slug logic if needed. 
+  // Ideally this uses the company appSlug, but we might not have it in props. 
+  // If companyId is the doc ID, you might need to fetch the slug or just use ID if your routing supports it.
+  // For now, let's assume we fetch the slug or construct a safe URL.
   
-  // Invite Link Logic
-  const inviteUrl = `${window.location.origin}/join/${companyId}`;
-  const [copied, setCopied] = useState(false);
+  const [companySlug, setCompanySlug] = useState('');
+  const { showSuccess, showInfo } = useToast ? useToast() : { showSuccess: alert, showInfo: alert }; 
 
   useEffect(() => {
     if (!companyId) return;
+
+    // 0. Fetch Company Slug for cleaner links
+    const fetchSlug = async () => {
+        try {
+            const compDoc = await getDoc(doc(db, "companies", companyId));
+            if(compDoc.exists()) setCompanySlug(compDoc.data().appSlug || companyId);
+        } catch(e) {}
+    };
+    fetchSlug();
     
     // Listen to memberships for this company in real-time
     const q = query(collection(db, "memberships"), where("companyId", "==", companyId));
@@ -62,10 +76,21 @@ export function ManageTeamModal({ companyId, onClose }) {
     return () => unsubscribe();
   }, [companyId]);
 
-  const handleCopyLink = () => {
-      navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handleCopyLink = (userId) => {
+      // NOTE: This assumes your Driver App is hosted at the same domain or you hardcode the domain.
+      // Since we are in the HR portal, window.location.origin might point to HR app.
+      // You typically need the DRIVER APP URL here. 
+      // For development, let's assume localhost:5173 (Driver) vs localhost:5174 (HR).
+      // IN PRODUCTION: You should hardcode the real driver portal URL or store it in config.
+      
+      // Construct URL: https://driver-app.com/apply/SLUG?recruiter=USER_ID
+      // Use a placeholder domain if running locally on different ports, otherwise relative
+      const driverAppUrl = "http://localhost:5173"; // <--- CHANGE THIS TO YOUR DRIVER APP URL
+      
+      const link = `${driverAppUrl}/apply/${companySlug}?recruiter=${userId}`;
+      
+      navigator.clipboard.writeText(link);
+      showSuccess("Custom recruiter link copied!");
   };
 
   const handleSaveGoal = async (userId, field, value) => {
@@ -77,7 +102,7 @@ export function ManageTeamModal({ companyId, onClose }) {
           }, { merge: true });
       } catch (err) { 
           console.error(err);
-          alert("Error saving goal"); 
+          alert("Error saving goal");
       }
   };
 
@@ -89,44 +114,21 @@ export function ManageTeamModal({ companyId, onClose }) {
         <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50 rounded-t-xl">
           <div>
             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-              <Users className="text-blue-600" /> Manage Team & Goals
+              <Users className="text-blue-600" /> Manage Team & Links
             </h2>
-            <p className="text-sm text-gray-500">Invite recruiters and set daily performance targets.</p>
+            <p className="text-sm text-gray-500">Set goals and get tracking links for your recruiters.</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full"><X size={20}/></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
-            
-            {/* Invite Section */}
-            <div className="bg-blue-600 p-5 rounded-xl text-white shadow-md">
-                <div className="flex justify-between items-start mb-2">
-                    <div>
-                        <h3 className="font-bold text-lg flex items-center gap-2"><LinkIcon size={20}/> Invite Link</h3>
-                        <p className="text-blue-100 text-sm">Share this link with new recruiters to add them to your dashboard.</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 bg-blue-700 p-2 rounded-lg border border-blue-500">
-                    <code className="flex-1 text-sm truncate text-blue-100 font-mono">{inviteUrl}</code>
-                    <button 
-                        onClick={handleCopyLink}
-                        className="px-3 py-1.5 bg-white text-blue-700 text-xs font-bold rounded shadow-sm flex items-center gap-1 hover:bg-blue-50 transition"
-                    >
-                        {copied ? <CheckCircle size={14}/> : <Copy size={14}/>}
-                        {copied ? 'Copied!' : 'Copy'}
-                    </button>
-                </div>
-            </div>
 
             {/* Team List & Goals */}
             <div>
-                <h3 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2">
-                    <Target size={18} /> Team Performance Goals
-                </h3>
                 {loading ? (
                     <div className="text-center py-8 text-gray-500"><Loader2 className="animate-spin mx-auto mb-2"/> Loading team...</div>
                 ) : team.length === 0 ? (
-                    <p className="text-center text-gray-400 italic py-4">No members found. Use the invite link above!</p>
+                    <p className="text-center text-gray-400 italic py-4">No members found.</p>
                 ) : (
                     <div className="space-y-3">
                         {team.map(member => (
@@ -143,38 +145,43 @@ export function ManageTeamModal({ companyId, onClose }) {
                                 </div>
 
                                 {/* Goals Inputs */}
-                                <div className="flex gap-4 w-full lg:w-auto">
+                                <div className="flex gap-4 items-center w-full lg:w-auto">
                                     {/* Dial Goal Input */}
-                                    <div className="flex flex-1 items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                        <Phone size={16} className="text-blue-500"/>
-                                        <div>
-                                            <p className="text-[10px] font-bold text-gray-500 uppercase">Daily Dials</p>
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="number" 
-                                                    className="w-20 p-1 text-sm border border-gray-300 rounded text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                                    defaultValue={member.callGoal}
-                                                    onBlur={(e) => handleSaveGoal(member.id, 'callGoal', e.target.value)}
-                                                />
-                                            </div>
+                                    <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                        <Phone size={14} className="text-blue-500"/>
+                                        <div className="flex flex-col">
+                                            <span className="text-[8px] font-bold text-gray-400 uppercase">Dials</span>
+                                            <input 
+                                                type="number" 
+                                                className="w-12 p-0 text-sm bg-transparent border-none text-center font-bold focus:ring-0 outline-none"
+                                                defaultValue={member.callGoal}
+                                                onBlur={(e) => handleSaveGoal(member.id, 'callGoal', e.target.value)}
+                                            />
                                         </div>
                                     </div>
 
-                                    {/* Contact Goal Input */}
-                                    <div className="flex flex-1 items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                        <Users size={16} className="text-green-600"/>
-                                        <div>
-                                            <p className="text-[10px] font-bold text-gray-500 uppercase">Daily Contacts</p>
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="number" 
-                                                    className="w-20 p-1 text-sm border border-gray-300 rounded text-center font-bold focus:ring-2 focus:ring-green-500 outline-none"
-                                                    defaultValue={member.contactGoal}
-                                                    onBlur={(e) => handleSaveGoal(member.id, 'contactGoal', e.target.value)}
-                                                />
-                                            </div>
+                                     {/* Contact Goal Input */}
+                                    <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                        <Users size={14} className="text-green-600"/>
+                                        <div className="flex flex-col">
+                                            <span className="text-[8px] font-bold text-gray-400 uppercase">Contacts</span>
+                                            <input 
+                                                type="number" 
+                                                className="w-12 p-0 text-sm bg-transparent border-none text-center font-bold focus:ring-0 outline-none"
+                                                defaultValue={member.contactGoal}
+                                                onBlur={(e) => handleSaveGoal(member.id, 'contactGoal', e.target.value)}
+                                            />
                                         </div>
                                     </div>
+
+                                    {/* Custom Link Button */}
+                                    <button 
+                                        onClick={() => handleCopyLink(member.id)}
+                                        className="flex items-center gap-2 px-3 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg border border-purple-200 transition-colors text-sm font-semibold ml-2"
+                                        title="Copy Custom Tracking Link"
+                                    >
+                                        <LinkIcon size={14} /> Link
+                                    </button>
                                 </div>
                             </div>
                         ))}

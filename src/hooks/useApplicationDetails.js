@@ -6,9 +6,12 @@ import { db, storage, auth } from '../firebase/config';
 import { getCompanyProfile } from '../firebase/firestore';
 import { logActivity } from '../utils/activityLogger';
 import { useData } from '../App';
+import { useToast } from '../components/feedback/ToastProvider'; // <-- NEW IMPORT
 
 export function useApplicationDetails(companyId, applicationId, onStatusUpdate) {
   const { currentUserClaims } = useData();
+  const { showSuccess, showError } = useToast(); // <-- Use Toast Hook
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -118,10 +121,11 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
               assignedToName: newOwnerName
           });
           await logActivity(companyId, collectionName, applicationId, "Reassigned", `Assigned to ${newOwnerName}`);
+          showSuccess(`Assigned to ${newOwnerName}`);
           if (onStatusUpdate) onStatusUpdate();
       } catch (error) {
           console.error("Error assigning:", error);
-          alert("Failed to update assignment.");
+          showError("Failed to update assignment.");
       }
   };
 
@@ -153,8 +157,9 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, { [fieldKey]: fileData });
         await logActivity(companyId, collectionName, applicationId, "File Uploaded", `Uploaded ${fieldKey}`);
+        showSuccess("File uploaded successfully");
     } catch (error) {
-        alert("File upload failed.");
+        showError("File upload failed.");
     } finally {
         setIsUploading(false);
     }
@@ -171,8 +176,9 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, { [fieldKey]: null });
         await logActivity(companyId, collectionName, applicationId, "File Deleted", `Deleted ${fieldKey}`);
+        showSuccess("File removed");
     } catch (error) {
-        alert("File deletion failed.");
+        showError("File deletion failed.");
     } finally {
         setIsUploading(false);
     }
@@ -185,10 +191,11 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, appData);
         await logActivity(companyId, collectionName, applicationId, "Details Updated", "Admin edited application details");
+        showSuccess("Changes saved successfully");
         setIsEditing(false);
         if (onStatusUpdate) onStatusUpdate();
     } catch (error) {
-        alert(`Error saving: ${error.message}`);
+        showError(`Error saving: ${error.message}`);
     } finally {
         setIsSaving(false);
     }
@@ -200,24 +207,24 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
       await updateDoc(docRef, { status: newStatus });
       await logActivity(companyId, collectionName, applicationId, "Status Changed", `Status changed to ${newStatus}`);
       setCurrentStatus(newStatus);
+      showSuccess(`Status updated to ${newStatus}`);
       if (onStatusUpdate) onStatusUpdate();
     } catch (error) {
       console.error("Error updating status:", error);
-      alert("Failed to update status.");
+      showError("Failed to update status.");
     }
   };
 
-  // --- NEW: Handle Driver Type Update ---
   const handleDriverTypeUpdate = async (newType) => {
     try {
       const docRef = doc(db, "companies", companyId, collectionName, applicationId);
       await updateDoc(docRef, { driverType: newType });
-      // Update local state
       setAppData(prev => ({ ...prev, driverType: newType }));
       await logActivity(companyId, collectionName, applicationId, "Type Updated", `Driver type changed to ${newType}`);
+      showSuccess(`Driver type updated to ${newType}`);
     } catch (error) {
       console.error("Error updating driver type:", error);
-      alert("Failed to update driver type.");
+      showError("Failed to update driver type.");
     }
   };
 
@@ -226,6 +233,6 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
     isEditing, setIsEditing, isSaving, isUploading, canEdit,
     teamMembers, assignedTo, handleAssignChange,
     loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate,
-    handleDriverTypeUpdate // <-- Exported here
+    handleDriverTypeUpdate 
   };
 }

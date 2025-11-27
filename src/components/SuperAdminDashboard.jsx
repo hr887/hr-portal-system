@@ -17,9 +17,9 @@ import {
   Zap,
   Database
 } from 'lucide-react';
-
 // --- Custom Hook ---
 import { useSuperAdminData } from '../hooks/useSuperAdminData';
+import { useToast } from './feedback/ToastProvider'; // <-- NEW IMPORT
 
 // Import Views
 import { DashboardView } from './admin/DashboardView.jsx';
@@ -29,7 +29,6 @@ import { CreateView } from './admin/CreateView.jsx';
 import { GlobalSearchResults } from './admin/GlobalSearchResults.jsx';
 import { ApplicationsView } from './admin/ApplicationsView.jsx';
 import { BulkLeadAddingView } from './admin/BulkLeadAddingView.jsx';
-
 // Import Modals
 import { EditCompanyModal } from './modals/EditCompanyModal.jsx';
 import { DeleteCompanyModal } from './modals/DeleteCompanyModal.jsx';
@@ -61,6 +60,7 @@ function NavItem({ label, icon, isActive, onClick }) {
 
 export function SuperAdminDashboard() {
   const { handleLogout } = useData();
+  const { showSuccess, showError, showInfo } = useToast(); // <-- Use Toast
   const [activeView, setActiveView] = useState('dashboard');
 
   // --- 1. Use Custom Hook for Data Logic ---
@@ -106,12 +106,13 @@ export function SuperAdminDashboard() {
       if (companyDoc.exists()) setEditingCompanyDoc(companyDoc);
     } catch (error) {
       console.error("Error opening edit company:", error);
+      showError("Could not load company details.");
     }
   };
 
   const handleAppClick = (app) => {
     if (app.sourceType === 'General Lead' || app.sourceType === 'Added by Safehaul') {
-      alert('This is a lead, not a full application. Details can be viewed in the table.');
+      showInfo('This is a lead, not a full application. Details can be viewed in the table.');
       return;
     }
     setSelectedApplication({
@@ -123,19 +124,24 @@ export function SuperAdminDashboard() {
   const handleDistributeLeads = async () => {
     if(!window.confirm("Are you sure you want to distribute daily leads to ALL companies based on their plans (50/200)?")) return;
     
+    showInfo("Distribution started. This may take a moment...");
+    
     try {
         const distribute = httpsCallable(functions, 'distributeDailyLeads');
-        alert("Distribution started. This may take a moment...");
         const result = await distribute();
         
-        let msg = result.data.message;
+        // Show detailed success message
         if(result.data.details && result.data.details.length > 0) {
-            msg += "\n\nDetails:\n" + result.data.details.join("\n");
+            console.log("Distribution Details:", result.data.details);
+            showSuccess(`Success! ${result.data.message}`);
+        } else {
+            showSuccess(result.data.message);
         }
-        alert(msg);
+        
+        refreshData(); // Refresh stats
     } catch (e) {
         console.error(e);
-        alert("Error distributing leads: " + e.message);
+        showError("Error distributing leads: " + e.message);
     }
   };
 
@@ -220,7 +226,7 @@ export function SuperAdminDashboard() {
           <div className="container mx-auto p-4 flex justify-between items-center gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-600 rounded-lg text-white">
-                <Building2 size={24} />
+                 <Building2 size={24} />
               </div>
               <h1 className="text-2xl font-bold text-gray-800">Super Admin</h1>
             </div>
