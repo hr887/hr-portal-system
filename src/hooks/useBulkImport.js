@@ -23,10 +23,11 @@ export function useBulkImport() {
             return;
         }
 
-        // Dynamic Key Finder
+        // Dynamic Key Finder (UPDATED to be less strict)
+        // Now checks if the column header INCLUDES the keyword (e.g., "Phone Number" includes "phone")
         const findKey = (row, keywords) => {
             const rowKeys = Object.keys(row);
-            return rowKeys.find(k => keywords.some(keyword => k.toLowerCase().trim() === keyword));
+            return rowKeys.find(k => keywords.some(keyword => k.toLowerCase().includes(keyword)));
         };
 
         const parsedRows = jsonData.map((row, index) => {
@@ -46,7 +47,7 @@ export function useBulkImport() {
             // Helper to clean string values
             const safeVal = (val) => (val === undefined || val === null) ? '' : String(val).trim();
 
-            // 2. Extract Names (Smart Split Logic)
+            // 2. Extract Names (Smart Split Logic UPDATED)
             let fName = firstKey ? safeVal(row[firstKey]) : '';
             let lName = lastKey ? safeVal(row[lastKey]) : '';
 
@@ -54,13 +55,23 @@ export function useBulkImport() {
             if ((!fName || !lName) && fullNameKey) {
                 const fullName = safeVal(row[fullNameKey]);
                 if (fullName) {
-                    const parts = fullName.split(' ').filter(p => p !== ''); // Split by space, remove empty
-                    if (parts.length > 0) {
-                        fName = parts[0]; // First part is First Name
+                    // Check for "Last, First" format (comma detection)
+                    if (fullName.includes(',')) {
+                        const parts = fullName.split(',').map(p => p.trim());
+                        lName = parts[0]; // First part is Last Name
                         if (parts.length > 1) {
-                            lName = parts.slice(1).join(' '); // Rest is Last Name (e.g. "Von Doom")
-                        } else {
-                            lName = 'Driver'; // Default if only one word provided
+                            fName = parts[1]; // Second part is First Name
+                        }
+                    } else {
+                        // Standard "First Last" format
+                        const parts = fullName.split(' ').filter(p => p !== '');
+                        if (parts.length > 0) {
+                            fName = parts[0]; 
+                            if (parts.length > 1) {
+                                lName = parts.slice(1).join(' '); 
+                            } else {
+                                lName = 'Driver'; 
+                            }
                         }
                     }
                 }
@@ -70,9 +81,14 @@ export function useBulkImport() {
             if (!fName) fName = 'Unknown';
             if (!lName) lName = 'Driver';
 
-            // 3. Phone Normalization
+            // 3. Phone Standardization
+            // We use the new helpers here to ensure data is clean BEFORE it enters the app state
             const rawPhone = phoneKey ? safeVal(row[phoneKey]) : '';
+            
+            // Standardize format for display/storage: (XXX) XXX-XXXX
             const formattedPhone = formatPhoneNumber(rawPhone);
+            
+            // Standardize digits for matching: XXXXXXXXXX
             const normPhone = normalizePhone(rawPhone);
 
             // 4. Driver Type
@@ -83,8 +99,8 @@ export function useBulkImport() {
                 firstName: fName,
                 lastName: lName,
                 email: emailKey ? safeVal(row[emailKey]) : '',
-                phone: formattedPhone,
-                normalizedPhone: normPhone,
+                phone: formattedPhone, // Store the pretty version
+                normalizedPhone: normPhone, // Store the clean version for logic
                 driverType: typeVal,
                 experience: expKey ? safeVal(row[expKey]) : '',
                 city: cityKey ? safeVal(row[cityKey]) : '',
@@ -110,6 +126,7 @@ export function useBulkImport() {
 
         parsedRows.forEach(row => {
             const hasEmail = !row.isEmailPlaceholder && seenEmails.has(row.email.toLowerCase());
+            // Use the normalized phone for duplicate checking
             const hasPhone = row.normalizedPhone && seenPhones.has(row.normalizedPhone);
             
             if (!hasEmail && !hasPhone) {

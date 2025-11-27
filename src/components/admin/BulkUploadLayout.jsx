@@ -20,11 +20,11 @@ export function BulkUploadLayout({
     onConfirm,
     uploading,
     progress,
-    stats
+    stats,
+    children // <-- This contains the Assignment UI from the parent
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-        {/* Fixed: Added max-h-[90vh] and flex-col to constrain height and enable internal scrolling */}
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl border border-gray-200 overflow-hidden max-h-[90vh] flex flex-col">
             
             {/* Header */}
@@ -116,6 +116,10 @@ export function BulkUploadLayout({
                 {/* STEP 2: PREVIEW */}
                 {step === 'preview' && (
                     <div className="flex flex-col h-full overflow-hidden">
+                        
+                        {/* INJECT CHILDREN HERE (The Assignment UI) */}
+                        {children}
+
                         <div className="flex justify-between items-center mb-4 shrink-0">
                             <div>
                                 <h3 className="text-lg font-bold text-gray-800">Preview Data</h3>

@@ -12,7 +12,9 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
   // Assignment State
   const [assignmentMode, setAssignmentMode] = useState('unassigned'); // unassigned, round_robin, specific_user
   const [teamMembers, setTeamMembers] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState('');
+  
+  // CHANGED: Now an array to support multi-select for Round Robin
+  const [selectedUserIds, setSelectedUserIds] = useState([]); 
 
   // Load Team Members for Assignment
   useEffect(() => {
@@ -29,14 +31,21 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
                 }
             }
             setTeamMembers(members);
+            
+            // Default: Select everyone for Round Robin initially
+            setSelectedUserIds(members.map(m => m.id));
         } catch(e) { console.error("Error fetching team:", e); }
     };
     fetchTeam();
   }, [companyId]);
 
   const uploadLeads = async (csvData, importMethod) => {
-    if (assignmentMode === 'specific_user' && !selectedUserId) {
-        throw new Error("Please select a user for assignment.");
+    // Validation
+    if (assignmentMode === 'specific_user' && selectedUserIds.length !== 1) {
+        throw new Error("Please select exactly one user for assignment.");
+    }
+    if (assignmentMode === 'round_robin' && selectedUserIds.length === 0) {
+        throw new Error("Please select at least one user for Round Robin distribution.");
     }
 
     const currentUser = auth.currentUser;
@@ -50,17 +59,23 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
     setUploading(true);
     setProgress('Syncing leads to database...');
     
+    // Create the distribution pool based on selection
+    let distributionPool = [];
+    if (assignmentMode !== 'unassigned') {
+        distributionPool = teamMembers.filter(m => selectedUserIds.includes(m.id));
+    }
+
     let createdCount = 0;
     let updatedCount = 0;
 
     try {
-        // Firestore batch limit is 500 operations. 
+        // Firestore batch limit is 500 operations.
         // Each lead involves 2 operations: 1 write/update to 'leads' + 1 write to 'activity_logs'
         // Safe batch size = 200 leads (400 operations)
-        const batchLimit = 200; 
+        const batchLimit = 200;
         let currentBatch = writeBatch(db);
         let opCount = 0;
-        let rrIndex = 0;
+        let poolIndex = 0; // Track round robin index
 
         for (let i = 0; i < csvData.length; i++) {
             const data = csvData[i];
@@ -70,14 +85,11 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
             let assignedTo = null;
             let assignedToName = null;
 
-            if (assignmentMode === 'specific_user') {
-                assignedTo = selectedUserId;
-                assignedToName = teamMembers.find(m => m.id === selectedUserId)?.name || 'Unknown';
-            } else if (assignmentMode === 'round_robin' && teamMembers.length > 0) {
-                const member = teamMembers[rrIndex % teamMembers.length];
+            if (assignmentMode !== 'unassigned' && distributionPool.length > 0) {
+                const member = distributionPool[poolIndex % distributionPool.length];
                 assignedTo = member.id;
                 assignedToName = member.name;
-                rrIndex++;
+                poolIndex++;
             }
 
             // Check for existing lead
@@ -90,6 +102,10 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
                 if (!snapEmail.empty) existingDoc = snapEmail.docs[0];
             }
             
+            // Use the data.normalizedPhone (which was set in useBulkImport) for better matching
+            // But we must query against the stored 'normalizedPhone' field in DB if it exists, 
+            // OR if you haven't migrated DB data yet, we query 'phone' with the formatted version.
+            // Assuming we query 'phone' (formatted) for now based on your previous structure:
             if (!existingDoc && data.phone) {
                 const qPhone = query(leadsRef, where("phone", "==", data.phone));
                 const snapPhone = await getDocs(qPhone);
@@ -101,6 +117,7 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
                 lastName: data.lastName || '',
                 email: data.email || '',
                 phone: data.phone || '', 
+                normalizedPhone: data.normalizedPhone || '', // Store normalized for future queries
                 experience: data.experience || '',
                 driverType: data.driverType || '',
                 source: importMethod === 'gsheet' ? 'Company Import (Sheet)' : 'Company Import (File)',
@@ -109,7 +126,6 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
             };
 
             // Prepare Common Log Data
-            // FIX: Adding performedBy is critical for security rules
             const logData = {
                 type: 'system',
                 performedBy: currentUser.uid,
@@ -126,7 +142,7 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
                 
                 const newLeadRef = doc(collection(db, "companies", companyId, "leads"));
                 currentBatch.set(newLeadRef, leadPayload);
-                
+
                 // Activity Log: Created
                 const logRef = collection(db, "companies", companyId, "leads", newLeadRef.id, "activity_logs");
                 const logDoc = doc(logRef);
@@ -136,10 +152,11 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
                     action: "Lead Imported",
                     details: `Imported via Bulk Upload. ${assignedToName ? `Assigned to ${assignedToName}` : 'Unassigned'}`
                 });
-
                 createdCount++;
             } else {
                 // UPDATE EXISTING LEAD
+                // Only update assignment if it was unassigned? Or overwrite? 
+                // Typically imports don't steal leads unless specified. Keeping existing assignment logic safe.
                 const docRef = doc(db, "companies", companyId, "leads", existingDoc.id);
                 currentBatch.update(docRef, leadPayload);
                 
@@ -152,11 +169,12 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
                     action: "Lead Data Updated",
                     details: "Updated via Bulk Upload match."
                 });
-
                 updatedCount++;
             }
 
             opCount++;
+
+            // Batch Commit if limit reached
             if (opCount >= batchLimit) { 
                 await currentBatch.commit();
                 currentBatch = writeBatch(db);
@@ -191,7 +209,7 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
       step, setStep,
       assignmentMode, setAssignmentMode,
       teamMembers,
-      selectedUserId, setSelectedUserId,
+      selectedUserIds, setSelectedUserIds, // Updated export
       uploadLeads
   };
 }

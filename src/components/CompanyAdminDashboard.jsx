@@ -9,13 +9,16 @@ import { getPortalUser } from '../firebase/firestore.js';
 import { useCompanyDashboard } from '../hooks/useCompanyDashboard'; 
 import { DashboardTable } from './company/DashboardTable'; 
 import { StatCard } from './company/StatCard.jsx';
-import { LeadDetailPanel } from './company/LeadDetailPanel.jsx';
+
+// --- Removed LeadDetailPanel (Causing issues & Inconsistent UI) ---
+// We now use ApplicationDetailView for EVERYTHING (Leads & Apps)
 
 import { DriverSearchModal } from './admin/DriverSearchModal.jsx';
 import { NotificationBell } from './feedback/NotificationBell.jsx'; 
 import { CallOutcomeModal } from './modals/CallOutcomeModal.jsx'; 
 import { CompanyBulkUpload } from './CompanyBulkUpload.jsx'; 
 import { PerformanceWidget } from './admin/PerformanceWidget.jsx'; 
+import { ApplicationDetailView } from './ApplicationDetailView.jsx'; 
 
 import { 
   LogOut, Search, FileText, Settings, Zap, Database, 
@@ -23,10 +26,14 @@ import {
 } from 'lucide-react';
 
 export function CompanyAdminDashboard() {
-  const { currentCompanyProfile, handleLogout, returnToCompanyChooser } = useData();
+  const { currentCompanyProfile, handleLogout, returnToCompanyChooser, currentUserClaims } = useData();
   const navigate = useNavigate();
   const companyId = currentCompanyProfile?.id;
   const companyName = currentCompanyProfile?.companyName;
+
+  // Check Admin Permission
+  const isCompanyAdmin = currentUserClaims?.roles?.[companyId] === 'company_admin' 
+                         || currentUserClaims?.roles?.globalRole === 'super_admin';
 
   const dashboard = useCompanyDashboard(companyId);
 
@@ -78,12 +85,15 @@ export function CompanyAdminDashboard() {
             </div>
 
             <div className="flex items-center gap-3">
-                <button 
-                    onClick={() => setIsUploadModalOpen(true)}
-                    className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
-                >
-                    <Upload size={16} /> Import Leads
-                </button>
+                {/* Only Show Import if Admin */}
+                {isCompanyAdmin && (
+                    <button 
+                        onClick={() => setIsUploadModalOpen(true)}
+                        className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                    >
+                        <Upload size={16} /> Import Leads
+                    </button>
+                )}
 
                 <button onClick={() => setIsDriverSearchOpen(true)} className="hidden sm:flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg">
                     <Search size={16} /> Search DB
@@ -154,14 +164,14 @@ export function CompanyAdminDashboard() {
                     onClick={() => dashboard.setActiveTab('my_leads')}
                 />
                  
-                 {/* Leaderboard Widget (Spans remaining space if grid allows, or wraps) */}
+                 {/* Leaderboard Widget */}
                  <div className="lg:col-span-1">
                      <PerformanceWidget companyId={companyId} />
                  </div>
             </div>
 
             {/* --- MAIN CONTENT AREA --- */}
-            <div className="flex-1 flex gap-6 overflow-hidden min-h-0">
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-white rounded-xl shadow-sm border border-gray-200">
                 
                 <DashboardTable 
                     activeTab={dashboard.activeTab}
@@ -182,26 +192,28 @@ export function CompanyAdminDashboard() {
                     setItemsPerPage={dashboard.setItemsPerPage}
                     totalPages={dashboard.totalPages}
                 />
-
-                {selectedApp && (
-                   <LeadDetailPanel 
-                      selectedApp={selectedApp}
-                      companyId={companyId}
-                      activeTab={dashboard.activeTab}
-                      onClose={() => setSelectedApp(null)}
-                      onPhoneClick={handlePhoneClick}
-                      onRefresh={dashboard.refreshData}
-                   />
-                )}
             </div>
         </div>
       </div>
+
+      {/* Unified Detail View Modal */}
+      {selectedApp && (
+         <ApplicationDetailView
+            key={selectedApp.id}
+            companyId={companyId}
+            applicationId={selectedApp.id}
+            onClosePanel={() => setSelectedApp(null)}
+            onStatusUpdate={dashboard.refreshData}
+            isCompanyAdmin={isCompanyAdmin}
+            onPhoneClick={(e) => handlePhoneClick(e, selectedApp)}
+         />
+      )}
 
       {isDriverSearchOpen && <DriverSearchModal onClose={() => setIsDriverSearchOpen(false)} />}
       
       {callModalData && <CallOutcomeModal lead={callModalData.lead} companyId={companyId} onClose={() => setCallModalData(null)} onUpdate={dashboard.refreshData} />}
       
-      {isUploadModalOpen && (
+      {isUploadModalOpen && isCompanyAdmin && (
           <CompanyBulkUpload 
             companyId={companyId}
             onClose={() => setIsUploadModalOpen(false)}

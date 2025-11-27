@@ -7,7 +7,7 @@ export function useCompanyDashboard(companyId) {
   const [applications, setApplications] = useState([]);
   const [platformLeads, setPlatformLeads] = useState([]);
   const [companyLeads, setCompanyLeads] = useState([]);
-  const [myLeads, setMyLeads] = useState([]); // <-- NEW State
+  const [myLeads, setMyLeads] = useState([]); 
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,22 +22,22 @@ export function useCompanyDashboard(companyId) {
     if (!companyId) return;
     setLoading(true);
     setError('');
+
     try {
       const [appList, allLeads] = await Promise.all([
           loadApplications(companyId),
           loadCompanyLeads(companyId)
       ]);
-      
       setApplications(appList);
 
       // 1. Platform Leads (SafeHaul Network)
-      // source is NOT 'Company Import'
-      const pLeads = allLeads.filter(l => l.source !== 'Company Import');
+      // These are leads distributed by Super Admin (where isPlatformLead is explicitly true)
+      const pLeads = allLeads.filter(l => l.isPlatformLead === true);
       setPlatformLeads(pLeads);
 
-      // 2. Company Leads (All uploaded by this company)
-      // source IS 'Company Import'
-      const cLeads = allLeads.filter(l => l.source === 'Company Import');
+      // 2. Company Leads (Uploaded by Company)
+      // These are leads uploaded via CSV/Sheet by the company (isPlatformLead is false)
+      const cLeads = allLeads.filter(l => l.isPlatformLead === false);
       setCompanyLeads(cLeads);
 
       // 3. My Leads (Assigned to ME)
@@ -67,7 +67,7 @@ export function useCompanyDashboard(companyId) {
       switch(activeTab) {
           case 'applications': return applications;
           case 'find_driver': return platformLeads;
-          case 'company_leads': return companyLeads; // <-- NEW Tab
+          case 'company_leads': return companyLeads; 
           case 'my_leads': return myLeads;
           default: return applications;
       }
@@ -81,8 +81,10 @@ export function useCompanyDashboard(companyId) {
          if(k === 'submittedAt') return obj.submittedAt?.seconds || obj.createdAt?.seconds || 0;
          return (obj[k] || '').toString().toLowerCase();
       };
+      
       const aVal = getString(a, key);
       const bVal = getString(b, key);
+      
       if (aVal < bVal) return direction === 'asc' ? -1 : 1;
       if (aVal > bVal) return direction === 'asc' ? 1 : -1;
       return 0;
@@ -101,6 +103,7 @@ export function useCompanyDashboard(companyId) {
   }, [searchQuery, currentList, sortConfig]);
 
   const totalPages = Math.ceil(filteredList.length / itemsPerPage) || 1;
+  
   const paginatedData = useMemo(() => {
       const start = (currentPage - 1) * itemsPerPage;
       return filteredList.slice(start, start + itemsPerPage);

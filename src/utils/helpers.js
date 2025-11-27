@@ -11,45 +11,50 @@
 }
 
 /**
+ * Strips a phone number to raw digits for database searching/comparison.
+ * e.g. "(123) 456-7890" -> "1234567890"
+ * e.g. "+1 123 456 7890" -> "1234567890"
+ * e.g. "1-555-0199" -> "5550199"
+ */
+export function normalizePhone(phone) {
+    if (!phone) return "";
+    
+    // 1. Convert to string
+    let cleaned = String(phone).trim();
+
+    // 2. Remove all non-digit characters
+    cleaned = cleaned.replace(/\D/g, '');
+    
+    // 3. Handle US Country Code
+    // If it is 11 digits and starts with '1', remove the '1'
+    if (cleaned.length === 11 && cleaned.startsWith('1')) {
+        cleaned = cleaned.substring(1);
+    }
+
+    return cleaned;
+}
+
+/**
  * Formats a phone number string into (XXX) XXX-XXXX format.
- * Handles inputs like +11234567890, 1234567890, 123-456-7890, etc.
+ * Uses normalizePhone internally to ensure consistency.
  */
 export function formatPhoneNumber(phone) {
     if (!phone) return "Not Specified";
 
-    // 1. Convert to string and strip all non-numeric characters
-    const cleaned = ('' + phone).replace(/\D/g, '');
+    // 1. Normalize first (get raw digits, no country code)
+    const cleaned = normalizePhone(phone);
 
-    // 2. Check for standard 10 digit match
-    const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
-    if (match) {
-        return `(${match[1]}) ${match[2]}-${match[3]}`;
+    // 2. Check for standard 10 digit length
+    if (cleaned.length === 10) {
+        const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+        if (match) {
+            return `(${match[1]}) ${match[2]}-${match[3]}`;
+        }
     }
 
-    // 3. Check for 11 digit match (if it starts with 1)
-    const match11 = cleaned.match(/^1(\d{3})(\d{3})(\d{4})$/);
-    if (match11) {
-        return `(${match11[1]}) ${match11[2]}-${match11[3]}`;
-    }
-
-    // 4. Return original if it doesn't look like a standard US number
+    // 3. Return original/cleaned if it doesn't fit standard format
+    // (e.g. international numbers or incomplete numbers)
     return phone;
-}
-
-/**
- * Strips a phone number to raw digits for database searching/comparison.
- * e.g. "(123) 456-7890" -> "1234567890"
- * e.g. "+1 123 456 7890" -> "1234567890"
- */
-export function normalizePhone(phone) {
-    if (!phone) return "";
-    let cleaned = ('' + phone).replace(/\D/g, '');
-    
-    // Remove leading '1' if 11 digits (US Country code)
-    if (cleaned.length === 11 && cleaned.startsWith('1')) {
-        cleaned = cleaned.substring(1);
-    }
-    return cleaned;
 }
 
 /**

@@ -3,10 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from '../../firebase/config';
 import { collectionGroup, query, where, getDocs, doc, getDoc, Timestamp, collection } from 'firebase/firestore';
 import { Trophy, Phone, Users, Loader2 } from 'lucide-react';
+import { useData } from '../../App.jsx'; // Import context
 
 export function PerformanceWidget({ companyId }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { currentUserClaims } = useData();
 
   useEffect(() => {
     if (!companyId || !auth.currentUser) return;
@@ -21,21 +23,32 @@ export function PerformanceWidget({ companyId }) {
             // 1. Get all Team Member IDs for this Company
             const memberRef = collection(db, "memberships");
             const memberSnap = await getDocs(query(memberRef, where("companyId", "==", companyId)));
-            const userIds = memberSnap.docs.map(d => d.data().userId);
+            
+            // Map member details including role
+            const members = memberSnap.docs.map(d => ({ userId: d.data().userId, role: d.data().role }));
 
-            if (userIds.length === 0) {
+            if (members.length === 0) {
                 setLeaderboard([]);
                 setLoading(false);
                 return;
             }
 
+            // Check Viewer Permissions
+            const isViewerAdmin = currentUserClaims?.roles?.[companyId] === 'company_admin' || currentUserClaims?.roles?.globalRole === 'super_admin';
+
             // 2. Fetch Real Names & Goals for ALL members (Parallel Fetch)
-            const memberDataPromises = userIds.map(async (uid) => {
+            const memberDataPromises = members.map(async (member) => {
+                // FILTER: If viewer is NOT admin, skip Admins in list
+                if (!isViewerAdmin && member.role === 'company_admin') {
+                    return null;
+                }
+
+                const uid = member.userId;
                 let name = 'Unknown User';
                 let callGoal = 150;
                 let contactGoal = 50;
 
-                // A. Fetch Profile Name from 'users' collection
+                // A. Fetch Profile Name
                 try {
                     const userDoc = await getDoc(doc(db, 'users', uid));
                     if (userDoc.exists() && userDoc.data().name) {
@@ -43,7 +56,7 @@ export function PerformanceWidget({ companyId }) {
                     }
                 } catch (e) { console.warn(`Failed to fetch user ${uid}`, e); }
 
-                // B. Fetch Goals from 'companies/../team' collection
+                // B. Fetch Goals
                 try {
                     const settingsSnap = await getDoc(doc(db, "companies", companyId, "team", uid));
                     if (settingsSnap.exists()) {
@@ -53,27 +66,25 @@ export function PerformanceWidget({ companyId }) {
                     }
                 } catch (e) { /* use defaults */ }
 
-                // Return initialized stats object
                 return {
                     uid,
                     name,
                     callGoal,
                     contactGoal,
-                    dials: new Set(), // Set ensures we count unique Lead IDs only
+                    dials: new Set(),
                     contacts: 0
                 };
             });
 
-            // Wait for all profiles to load
-            const membersArray = await Promise.all(memberDataPromises);
+            const results = await Promise.all(memberDataPromises);
+            const validMembers = results.filter(m => m !== null); // Remove filtered out admins
             
-            // Convert array to Map for fast lookup by UID
             const statsMap = {};
-            membersArray.forEach(m => {
+            validMembers.forEach(m => {
                 statsMap[m.uid] = m;
             });
 
-            // 3. Fetch Activities for the Company Today
+            // 3. Fetch Activities
             const activitiesRef = collectionGroup(db, 'activities');
             const q = query(
                 activitiesRef,
@@ -82,25 +93,22 @@ export function PerformanceWidget({ companyId }) {
             );
             const activitiesSnap = await getDocs(q);
 
-            // 4. Aggregate Activities into Stats
+            // 4. Aggregate
             activitiesSnap.forEach(docSnap => {
                 const data = docSnap.data();
                 const uid = data.performedBy;
 
-                // Only count if user is currently in the team map
                 if (statsMap[uid]) {
-                    // Count unique dials (based on leadId)
                     if (data.leadId) {
                         statsMap[uid].dials.add(data.leadId);
                     }
-                    // Count contacts
                     if (data.isContact) {
                         statsMap[uid].contacts += 1;
                     }
                 }
             });
 
-            // 5. Format for Render & Sort by Contacts (Highest first)
+            // 5. Format & Sort
             const lb = Object.values(statsMap).map(user => ({
                 uid: user.uid,
                 name: user.name,
@@ -120,7 +128,7 @@ export function PerformanceWidget({ companyId }) {
     };
 
     fetchData();
-  }, [companyId]);
+  }, [companyId, currentUserClaims]);
 
   if (loading) return <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 h-full flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
 
@@ -141,15 +149,11 @@ export function PerformanceWidget({ companyId }) {
             ) : (
                 leaderboard.map((user, index) => {
                     const isMe = user.uid === auth.currentUser?.uid;
-                    
-                    // Calculate Percentages for Progress Bars
                     const callPct = Math.min(100, Math.round((user.dials / user.callGoal) * 100));
                     const contactPct = Math.min(100, Math.round((user.contacts / user.contactGoal) * 100));
 
                     return (
                         <div key={user.uid} className={`p-3 rounded-lg border ${isMe ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300' : 'bg-white border-gray-100'}`}>
-                            
-                            {/* Rank & Name */}
                             <div className="flex items-center gap-3 mb-3">
                                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${index === 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>
                                     {index + 1}
@@ -159,9 +163,7 @@ export function PerformanceWidget({ companyId }) {
                                 </span>
                             </div>
 
-                            {/* Progress Bars Grid */}
                             <div className="grid grid-cols-2 gap-4">
-                                {/* Dials */}
                                 <div>
                                     <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
                                         <span className="flex items-center gap-1"><Phone size={10}/> Dials</span>
@@ -171,8 +173,6 @@ export function PerformanceWidget({ companyId }) {
                                         <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-1000" style={{width: `${callPct}%`}}></div>
                                     </div>
                                 </div>
-
-                                {/* Contacts */}
                                 <div>
                                     <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
                                         <span className="flex items-center gap-1"><Users size={10}/> Contacts</span>
@@ -183,7 +183,6 @@ export function PerformanceWidget({ companyId }) {
                                     </div>
                                 </div>
                             </div>
-
                         </div>
                     );
                 })

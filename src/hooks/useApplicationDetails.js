@@ -2,33 +2,38 @@
 import { useState, useEffect, useCallback } from 'react';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { db, storage } from '../firebase/config';
+import { db, storage, auth } from '../firebase/config';
 import { getCompanyProfile } from '../firebase/firestore';
 import { logActivity } from '../utils/activityLogger';
+import { useData } from '../App'; // Import context to check claims
 
 export function useApplicationDetails(companyId, applicationId, onStatusUpdate) {
+  const { currentUserClaims } = useData();
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  // Data State
   const [appData, setAppData] = useState(null);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [collectionName, setCollectionName] = useState('applications');
   
-  // UI State
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // URLs & Status
   const [fileUrls, setFileUrls] = useState({});
   const [currentStatus, setCurrentStatus] = useState('');
 
-  // Assignment State
   const [teamMembers, setTeamMembers] = useState([]);
   const [assignedTo, setAssignedTo] = useState('');
 
-  // --- 1. Fetch Team for Assignment ---
+  // Permission Check
+  // Super Admin OR Company Admin can edit. HR User (Recruiter) cannot edit application data.
+  const canEdit = 
+    currentUserClaims?.roles?.globalRole === 'super_admin' || 
+    currentUserClaims?.roles?.[companyId] === 'company_admin';
+
+  // 1. Fetch Team
   useEffect(() => {
       if(!companyId) return;
       const fetchTeam = async () => {
@@ -41,12 +46,12 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
                   if(uSnap.exists()) members.push({ id: uSnap.id, name: uSnap.data().name });
               }
               setTeamMembers(members);
-          } catch(e) { console.error("Team fetch error", e); }
+          } catch(e) {}
       };
       fetchTeam();
   }, [companyId]);
 
-  // --- 2. Load Application ---
+  // 2. Load Application
   const loadApplication = useCallback(async () => {
     if (!companyId || !applicationId) return;
     setLoading(true);
@@ -116,7 +121,7 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
               assignedTo: newUserId,
               assignedToName: newOwnerName
           });
-          await logActivity(companyId, collectionName, applicationId, "Assigned Updated", `Assigned to ${newOwnerName}`);
+          await logActivity(companyId, collectionName, applicationId, "Reassigned", `Assigned to ${newOwnerName}`);
           if (onStatusUpdate) onStatusUpdate();
       } catch (error) {
           console.error("Error assigning:", error);
@@ -125,11 +130,12 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   };
 
   const handleDataChange = (field, value) => {
+    if (!canEdit) return;
     setAppData(prev => ({ ...prev, [field]: value }));
   };
 
   const handleAdminFileUpload = async (fieldKey, file) => {
-    if (!file) return;
+    if (!file || !canEdit) return;
     setIsUploading(true);
     
     const oldStoragePath = appData[fieldKey]?.storagePath;
@@ -137,7 +143,7 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         try { await deleteObject(ref(storage, oldStoragePath)); } catch (e) {}
     }
 
-    const storagePath = `companies/${companyId}/applications/${applicationId}/${fieldKey}-${file.name}`;
+    const storagePath = `companies/${companyId}/${collectionName}/${applicationId}/${fieldKey}-${file.name}`;
     const fileRef = ref(storage, storagePath);
 
     try {
@@ -160,7 +166,7 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   };
   
   const handleAdminFileDelete = async (fieldKey, storagePath) => {
-    if (!storagePath || !window.confirm("Remove file?")) return;
+    if (!storagePath || !window.confirm("Remove file?") || !canEdit) return;
     setIsUploading(true);
     try {
         await deleteObject(ref(storage, storagePath));
@@ -179,11 +185,12 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   };
 
   const handleSaveEdit = async () => {
+    if (!canEdit) return;
     setIsSaving(true);
     try {
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, appData);
-        await logActivity(companyId, collectionName, applicationId, "Details Updated", "Edited application details");
+        await logActivity(companyId, collectionName, applicationId, "Details Updated", "Admin edited application details");
         setIsEditing(false);
         if (onStatusUpdate) onStatusUpdate(); 
     } catch (error) {
@@ -208,7 +215,7 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
 
   return {
     loading, error, appData, companyProfile, collectionName, fileUrls, currentStatus,
-    isEditing, setIsEditing, isSaving, isUploading,
+    isEditing, setIsEditing, isSaving, isUploading, canEdit,
     teamMembers, assignedTo, handleAssignChange,
     loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate
   };

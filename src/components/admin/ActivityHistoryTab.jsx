@@ -2,20 +2,23 @@
 import React, { useEffect, useState } from 'react';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { Loader2, CircleDot, User, FileText, RefreshCcw, MessageSquare } from 'lucide-react';
+import { Loader2, CircleDot, User, FileText, RefreshCcw, MessageSquare, Mail } from 'lucide-react';
 
 export function ActivityHistoryTab({ companyId, applicationId, collectionName }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetchLogs();
-    }, [companyId, applicationId]);
+        if(companyId && applicationId) fetchLogs();
+    }, [companyId, applicationId, collectionName]);
 
     const fetchLogs = async () => {
         setLoading(true);
         try {
-            const logsRef = collection(db, "companies", companyId, collectionName, applicationId, "activity_logs");
+            // Normalize collection name to ensure we hit the right path
+            const validCollection = (collectionName === 'leads') ? 'leads' : 'applications';
+            
+            const logsRef = collection(db, "companies", companyId, validCollection, applicationId, "activity_logs");
             const q = query(logsRef, orderBy("timestamp", "desc"));
             const snapshot = await getDocs(q);
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -31,46 +34,43 @@ export function ActivityHistoryTab({ companyId, applicationId, collectionName })
         if (action.includes('Assigned')) return <RefreshCcw size={16} className="text-orange-600"/>;
         if (action.includes('Status')) return <CircleDot size={16} className="text-blue-600"/>;
         if (action.includes('Note')) return <MessageSquare size={16} className="text-gray-600"/>;
-        if (type === 'upload') return <FileText size={16} className="text-purple-600"/>;
+        if (action.includes('Email')) return <Mail size={16} className="text-purple-600"/>;
+        if (type === 'upload') return <FileText size={16} className="text-green-600"/>;
         return <User size={16} className="text-gray-500"/>;
     };
 
-    if (loading) return <div className="p-6 text-center"><Loader2 className="animate-spin mx-auto text-blue-600"/></div>;
+    if (loading) return <div className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-blue-600"/></div>;
 
     if (logs.length === 0) {
         return (
-            <div className="p-8 text-center border border-dashed border-gray-300 rounded-lg bg-gray-50 text-gray-500">
-                No activity recorded yet.
+            <div className="flex flex-col items-center justify-center h-64 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+                <FileText size={32} className="mb-2 opacity-20" />
+                <p>No activity recorded yet.</p>
             </div>
         );
     }
 
     return (
-        <div className="space-y-6 p-2">
-            <div className="relative border-l-2 border-gray-200 ml-3 space-y-6">
+        <div className="py-4 px-2">
+            <div className="relative border-l-2 border-gray-200 ml-4 space-y-8">
                 {logs.map((log) => (
-                    <div key={log.id} className="mb-8 ml-6 relative">
-                        {/* Dot on timeline */}
-                        <div className="absolute -left-[31px] top-1 w-6 h-6 bg-white border-2 border-gray-200 rounded-full flex items-center justify-center">
+                    <div key={log.id} className="ml-8 relative">
+                        {/* Timeline Dot */}
+                        <div className="absolute -left-[41px] top-0 w-8 h-8 bg-white border-2 border-gray-200 rounded-full flex items-center justify-center z-10 shadow-sm">
                             {getIcon(log.type, log.action)}
                         </div>
                         
-                        {/* Content */}
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1">
-                            <div>
-                                <span className="text-sm font-bold text-gray-900">{log.action}</span>
-                                <p className="text-sm text-gray-600 mt-0.5">{log.details}</p>
+                        {/* Content Card */}
+                        <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 hover:border-blue-200 transition-colors">
+                            <div className="flex justify-between items-start mb-1">
+                                <span className="font-bold text-gray-900 text-sm">{log.action}</span>
+                                <span className="text-xs text-gray-400">
+                                    {log.timestamp ? new Date(log.timestamp.seconds * 1000).toLocaleString() : 'Just now'}
+                                </span>
                             </div>
-                            <div className="text-right shrink-0">
-                                <div className="text-xs font-medium text-gray-500">
-                                    {log.timestamp ? new Date(log.timestamp.seconds * 1000).toLocaleDateString() : 'Just now'}
-                                </div>
-                                <div className="text-[10px] text-gray-400">
-                                    {log.timestamp ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
-                                </div>
-                                <div className="text-xs font-semibold text-blue-600 mt-1">
-                                    by {log.performedByName || 'System'}
-                                </div>
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{log.details}</p>
+                            <div className="mt-2 text-xs font-semibold text-blue-600 flex items-center gap-1">
+                                <User size={10} /> {log.performedByName || 'System'}
                             </div>
                         </div>
                     </div>

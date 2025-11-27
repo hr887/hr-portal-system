@@ -11,7 +11,6 @@ import {
     query,
     where,
     orderBy,
-    serverTimestamp,
     documentId
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -197,7 +196,8 @@ export async function getCompanyProfile(companyId) {
     try {
         const getProfile = httpsCallable(functions, 'getCompanyProfile');
         const result = await getProfile({ companyId: companyId });
-        return result.data; // This is the company data object
+        return result.data;
+        // This is the company data object
     } catch (error) {
         console.error(`Error calling getCompanyProfile function for ${companyId}:`, error);
         return null;
@@ -228,7 +228,6 @@ export async function loadApplications(companyId) {
             isNestedApp: true
         });
     });
-
     return appList;
 }
 
@@ -320,39 +319,23 @@ export async function loadCompanyLeads(companyId) {
     
     try {
         const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            isPlatformLead: true
-        }));
+        return snapshot.docs.map(doc => {
+            const data = doc.data();
+            // We use the boolean if it exists, otherwise assume true (legacy)
+            // But for new uploads, the upload script sets isPlatformLead: false explicitly.
+            return {
+                id: doc.id,
+                ...data,
+                // If isPlatformLead is missing, assume true (legacy behavior)
+                // If it exists, respect it (false for company uploads, true for super admin distribution)
+                isPlatformLead: data.isPlatformLead !== false 
+            };
+        });
     } catch (error) {
         console.error("Error loading leads:", error);
         return [];
     }
 }
-
-/**
- * Submit a Quick Apply (Lead) to a specific company.
- */
-export async function submitCompanyLead(companyId, driverProfile) {
-    if (!companyId || !driverProfile) throw new Error("Missing data");
-
-    const leadData = {
-        driverId: driverProfile.id,
-        firstName: driverProfile.personalInfo.firstName,
-        lastName: driverProfile.personalInfo.lastName,
-        email: driverProfile.personalInfo.email,
-        phone: driverProfile.personalInfo.phone,
-        experience: driverProfile.qualifications.experienceYears,
-        driverType: driverProfile.driverProfile?.type || 'Unknown',
-        status: 'New Lead',
-        createdAt: serverTimestamp()
-    };
-
-    const leadsRef = collection(db, "companies", companyId, "leads");
-    return await addDoc(leadsRef, leadData);
-}
-
 
 // --- INTERNAL NOTES (HR ONLY) ---
 
@@ -376,7 +359,6 @@ export async function getApplicationNotes(companyId, applicationId) {
  */
 export async function addApplicationNote(companyId, applicationId, noteText, authorName) {
     const notesRef = collection(db, "companies", companyId, "applications", applicationId, "internal_notes");
-    
     await addDoc(notesRef, {
         text: noteText,
         author: authorName,
