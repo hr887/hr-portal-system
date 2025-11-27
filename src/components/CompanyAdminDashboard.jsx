@@ -8,8 +8,8 @@ import { getPortalUser } from '../firebase/firestore.js';
 // --- CUSTOM HOOKS & COMPONENTS ---
 import { useCompanyDashboard } from '../hooks/useCompanyDashboard'; 
 import { DashboardTable } from './company/DashboardTable'; 
-import { StatCard } from './company/StatCard.jsx'; // <-- New Import
-import { LeadDetailPanel } from './company/LeadDetailPanel.jsx'; // <-- New Import
+import { StatCard } from './company/StatCard.jsx';
+import { LeadDetailPanel } from './company/LeadDetailPanel.jsx';
 
 import { DriverSearchModal } from './admin/DriverSearchModal.jsx';
 import { NotificationBell } from './feedback/NotificationBell.jsx'; 
@@ -19,7 +19,7 @@ import { PerformanceWidget } from './admin/PerformanceWidget.jsx';
 
 import { 
   LogOut, Search, FileText, Settings, Zap, Database, 
-  Upload, Replace
+  Upload, Replace, Briefcase, Users
 } from 'lucide-react';
 
 export function CompanyAdminDashboard() {
@@ -28,10 +28,8 @@ export function CompanyAdminDashboard() {
   const companyId = currentCompanyProfile?.id;
   const companyName = currentCompanyProfile?.companyName;
 
-  // --- 1. USE CUSTOM HOOK (The Logic) ---
   const dashboard = useCompanyDashboard(companyId);
 
-  // --- 2. UI STATE (Modals & User Menu) ---
   const [userName, setUserName] = useState('Admin User');
   const [userEmail, setUserEmail] = useState('');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -41,7 +39,6 @@ export function CompanyAdminDashboard() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [callModalData, setCallModalData] = useState(null); 
 
-  // --- 3. LOAD USER INFO ---
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (user) {
@@ -53,7 +50,6 @@ export function CompanyAdminDashboard() {
     return () => unsubscribe();
   }, []);
 
-  // --- 4. HANDLERS ---
   const handlePhoneClick = (e, item) => {
       if(e) e.stopPropagation(); 
       if(item && item.phone) {
@@ -124,9 +120,9 @@ export function CompanyAdminDashboard() {
 
         <div className="flex-1 overflow-hidden flex flex-col max-w-[1600px] mx-auto w-full p-4 sm:p-6">
             {/* --- STATS ROW --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6 shrink-0">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6 shrink-0">
                  <StatCard 
-                    title="Direct Applications" 
+                    title="Applications" 
                     value={dashboard.applications.length} 
                     icon={<FileText size={20}/>} 
                     active={dashboard.activeTab === 'applications'}
@@ -134,7 +130,7 @@ export function CompanyAdminDashboard() {
                     onClick={() => dashboard.setActiveTab('applications')}
                 />
                 <StatCard 
-                    title="Find a Driver" 
+                    title="SafeHaul Leads" 
                     value={dashboard.platformLeads.length} 
                     icon={<Zap size={20}/>} 
                     active={dashboard.activeTab === 'find_driver'}
@@ -142,22 +138,31 @@ export function CompanyAdminDashboard() {
                     onClick={() => dashboard.setActiveTab('find_driver')}
                 />
                 <StatCard 
-                    title="My Leads" 
+                    title="Company Leads" 
                     value={dashboard.companyLeads.length} 
-                    icon={<Database size={20}/>} 
+                    icon={<Briefcase size={20}/>} 
+                    active={dashboard.activeTab === 'company_leads'}
+                    colorClass="ring-orange-500 bg-orange-500"
+                    onClick={() => dashboard.setActiveTab('company_leads')}
+                />
+                <StatCard 
+                    title="My Leads" 
+                    value={dashboard.myLeads.length} 
+                    icon={<User size={20}/>} 
                     active={dashboard.activeTab === 'my_leads'}
                     colorClass="ring-green-500 bg-green-500"
                     onClick={() => dashboard.setActiveTab('my_leads')}
                 />
                  
-                 {/* Leaderboard Widget */}
-                 <PerformanceWidget companyId={companyId} />
+                 {/* Leaderboard Widget (Spans remaining space if grid allows, or wraps) */}
+                 <div className="lg:col-span-1">
+                     <PerformanceWidget companyId={companyId} />
+                 </div>
             </div>
 
             {/* --- MAIN CONTENT AREA --- */}
             <div className="flex-1 flex gap-6 overflow-hidden min-h-0">
                 
-                {/* LIST VIEW (Table) */}
                 <DashboardTable 
                     activeTab={dashboard.activeTab}
                     loading={dashboard.loading}
@@ -178,7 +183,6 @@ export function CompanyAdminDashboard() {
                     totalPages={dashboard.totalPages}
                 />
 
-                {/* DETAIL VIEW (Right Panel) */}
                 {selectedApp && (
                    <LeadDetailPanel 
                       selectedApp={selectedApp}
@@ -206,4 +210,9 @@ export function CompanyAdminDashboard() {
       )}
     </>
   );
+}
+
+// Helper icons
+function User({size}) {
+    return <Users size={size} />
 }

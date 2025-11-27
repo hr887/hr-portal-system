@@ -1,26 +1,22 @@
 // src/components/ApplicationDetailView.jsx
-import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from "firebase/firestore"; // Direct imports for dynamic paths
-import { db, storage } from '../firebase/config';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; 
-import { getFieldValue } from '../utils/helpers.js';
+import React, { useState } from 'react';
 import { generateApplicationPDF } from '../utils/pdfGenerator.js';
-import { getCompanyProfile } from '../firebase/firestore.js';
+import { getFieldValue } from '../utils/helpers.js';
 import { useData } from '../App.jsx';
+import { useApplicationDetails } from '../hooks/useApplicationDetails';
 import { 
   Download, X, ArrowRight, Edit2, Save, Trash2, 
-  FileText, UserCheck, Folder, FileSignature, MessageSquare, Phone 
+  FileText, UserCheck, Folder, FileSignature, MessageSquare, Phone, Clock
 } from 'lucide-react';
 
-// --- Child Components ---
 import { ApplicationInfo } from './admin/ApplicationInfo.jsx';
 import { MoveApplicationModal, DeleteConfirmModal } from './admin/ApplicationModals.jsx';
 import { DQFileTab } from './admin/DQFileTab.jsx';
 import { GeneralDocumentsTab } from './admin/GeneralDocumentsTab.jsx';
 import { SendOfferModal } from './admin/SendOfferModal.jsx';
 import { NotesTab } from './admin/NotesTab.jsx';
+import { ActivityHistoryTab } from './admin/ActivityHistoryTab.jsx';
 
-// --- Agreement Templates ---
 const agreementTemplates = [
   { id: 'agreement-release', title: 'RELEASE AND WAIVER', text: `[COMPANY_NAME] is released from all liability in responding to inquiries and releasing information in connection with my application.` },
   { id: 'agreement-certify', title: 'CERTIFICATION', text: `My signature below certifies that this application was completed by me, and that all entries on it and information in it is true and complete to the best of my knowledge.` },
@@ -54,176 +50,24 @@ export function ApplicationDetailView({
   onPhoneClick 
 }) {
   const { currentUserClaims } = useData();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   
-  // Data State
-  const [appData, setAppData] = useState(null);
-  const [companyProfile, setCompanyProfile] = useState(null);
-  const [collectionName, setCollectionName] = useState('applications'); // 'applications' or 'leads'
-  
-  // Modal State
+  // Hook Usage
+  const {
+    loading, error, appData, companyProfile, collectionName, fileUrls, currentStatus,
+    isEditing, setIsEditing, isSaving, isUploading,
+    teamMembers, assignedTo, handleAssignChange,
+    loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate
+  } = useApplicationDetails(companyId, applicationId, onStatusUpdate);
+
+  // Local UI State
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
-  
-  // Edit/Upload State
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-
-  // URLs & Status
-  const [fileUrls, setFileUrls] = useState({ cdl: null, ssc: null, medical: null, twic: null, mvrConsent: null, drugTestConsent: null });
-  const [currentStatus, setCurrentStatus] = useState('');
-  
   const [activeTab, setActiveTab] = useState('application'); 
 
   const isSuperAdmin = currentUserClaims?.roles?.globalRole === 'super_admin';
-
-  // --- LOAD DATA ---
-  const loadApplication = async () => {
-    if (!companyId || !applicationId) return;
-    setLoading(true);
-    setError('');
-    
-    try {
-      // 1. Fetch Company Profile
-      const companyProf = await getCompanyProfile(companyId);
-      setCompanyProfile(companyProf);
-
-      // 2. Determine Collection & Fetch Doc
-      // Try 'applications' first
-      let coll = 'applications';
-      let docRef = doc(db, "companies", companyId, coll, applicationId);
-      let docSnap = await getDoc(docRef);
-
-      // If not found, try 'leads'
-      if (!docSnap.exists()) {
-          coll = 'leads';
-          docRef = doc(db, "companies", companyId, coll, applicationId);
-          docSnap = await getDoc(docRef);
-      }
-
-      if (docSnap.exists()) {
-        setCollectionName(coll);
-        const data = docSnap.data();
-        setAppData(data);
-        setCurrentStatus(data.status || 'New Application');
-        
-        // Helper to get URL
-        const getUrl = async (fileData) => {
-          if (!fileData) return null;
-          if (fileData.storagePath) {
-             // Using getFileUrl from storage.js logic inline here for simplicity
-             try {
-                 return await getDownloadURL(ref(storage, fileData.storagePath));
-             } catch (e) { return null; }
-          }
-          return fileData.url || null; 
-        };
-
-        // Fetch file URLs
-        const [cdl, cdlBack, ssc, medical, twic, mvrConsent, drugTestConsent] = await Promise.all([
-          getUrl(data['cdl-front']),
-          getUrl(data['cdl-back']),
-          getUrl(data['ssc-upload']),
-          getUrl(data['med-card-upload']),
-          getUrl(data['twic-card-upload']),
-          getUrl(data['mvr-consent-upload']),
-          getUrl(data['drug-test-consent-upload'])
-        ]);
-
-        setFileUrls({ cdl, cdlBack, ssc, medical, twic, mvrConsent, drugTestConsent });
-        
-      } else {
-        setError(`Could not find application details.`);
-      }
-    } catch (err) {
-      console.error("Error fetching document:", err);
-      setError("Error: Could not load application.");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  useEffect(() => {
-    setActiveTab('application');
-    loadApplication();
-  }, [companyId, applicationId]);
-
-  // --- HANDLERS ---
-
-  const handleDataChange = (field, value) => {
-    setAppData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleAdminFileUpload = async (fieldKey, file) => {
-    if (!file) return;
-    setIsUploading(true);
-    
-    // Delete old file if exists
-    const oldStoragePath = appData[fieldKey]?.storagePath;
-    if (oldStoragePath) {
-        try { await deleteObject(ref(storage, oldStoragePath)); } catch (e) {}
-    }
-
-    // Upload new file
-    // Note: We store in 'applications' folder even for leads to keep storage rules simple
-    const storagePath = `companies/${companyId}/applications/${applicationId}/${fieldKey}-${file.name}`;
-    const fileRef = ref(storage, storagePath);
-
-    try {
-        await uploadBytes(fileRef, file);
-        const newUrl = await getDownloadURL(fileRef);
-        const fileData = { name: file.name, storagePath: storagePath, url: newUrl };
-        
-        setAppData(prev => ({ ...prev, [fieldKey]: fileData }));
-        setFileUrls(prev => ({ ...prev, [fieldKey]: newUrl }));
-        
-        // Update Firestore (Dynamic Path)
-        const docRef = doc(db, "companies", companyId, collectionName, applicationId);
-        await updateDoc(docRef, { [fieldKey]: fileData });
-        
-    } catch (error) {
-        alert("File upload failed.");
-    } finally {
-        setIsUploading(false);
-    }
-  };
-  
-  const handleAdminFileDelete = async (fieldKey, storagePath) => {
-    if (!storagePath || !window.confirm("Remove file?")) return;
-    setIsUploading(true);
-    try {
-        await deleteObject(ref(storage, storagePath));
-        setAppData(prev => ({ ...prev, [fieldKey]: null }));
-        setFileUrls(prev => ({ ...prev, [fieldKey]: null }));
-        
-        // Update Firestore
-        const docRef = doc(db, "companies", companyId, collectionName, applicationId);
-        await updateDoc(docRef, { [fieldKey]: null });
-
-    } catch (error) {
-        alert("File deletion failed.");
-    } finally {
-        setIsUploading(false);
-    }
-  };
-
-  const handleSaveEdit = async () => {
-    setIsSaving(true);
-    try {
-        // Save using dynamic path
-        const docRef = doc(db, "companies", companyId, collectionName, applicationId);
-        await updateDoc(docRef, appData);
-        setIsEditing(false);
-        onStatusUpdate(); 
-    } catch (error) {
-        alert(`Error saving: ${error.message}`);
-    } finally {
-        setIsSaving(false);
-    }
-  };
+  const currentAppName = getFieldValue(appData?.['firstName']) + ' ' + getFieldValue(appData?.['lastName']);
+  const driverId = appData?.driverId || appData?.userId;
 
   const handleDownloadPdf = () => {
     if (!appData || !companyProfile) return;
@@ -239,27 +83,11 @@ export function ApplicationDetailView({
     }
   };
   
-  const handleStatusUpdate = async (newStatus) => {
-    try {
-      const docRef = doc(db, "companies", companyId, collectionName, applicationId);
-      await updateDoc(docRef, { status: newStatus });
-      setCurrentStatus(newStatus);
-      onStatusUpdate();
-    } catch (error) {
-      console.error("Error updating status:", error);
-      alert("Failed to update status.");
-    }
-  };
-  
   const handleManagementComplete = () => {
-    onStatusUpdate();
+    if (onStatusUpdate) onStatusUpdate();
     onClosePanel(); 
   };
-  
-  const currentAppName = getFieldValue(appData?.['firstName']) + ' ' + getFieldValue(appData?.['lastName']);
-  const driverId = appData?.driverId || appData?.userId;
 
-  // --- RENDER CONTENT ---
   const renderTabContent = () => {
     if (loading) return <p className="text-gray-700 text-center p-10">Loading details...</p>;
     if (error) return <p className="text-red-600 text-center p-10">{error}</p>;
@@ -268,32 +96,52 @@ export function ApplicationDetailView({
     switch (activeTab) {
       case 'application':
         return (
-          <ApplicationInfo
-            appData={appData}
-            fileUrls={fileUrls}
-            isEditing={isEditing}
-            isUploading={isUploading}
-            handleDataChange={handleDataChange}
-            handleAdminFileUpload={handleAdminFileUpload}
-            handleAdminFileDelete={handleAdminFileDelete}
-            companyId={companyId}
-            applicationId={applicationId}
-            currentStatus={currentStatus}
-            handleStatusUpdate={handleStatusUpdate}
-            isCompanyAdmin={isCompanyAdmin} 
-            isSuperAdmin={isSuperAdmin}
-            onPhoneClick={onPhoneClick} 
-          />
+          <div className="space-y-6">
+             {/* Assignment Dropdown (Added here for Full Apps too) */}
+             {!isEditing && (
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg mb-4">
+                    <label className="text-xs font-bold text-blue-800 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                        <UserCheck size={12}/> Assigned Recruiter
+                    </label>
+                    <select 
+                        className="w-full p-2 text-sm border border-blue-200 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                        value={assignedTo}
+                        onChange={(e) => handleAssignChange(e.target.value)}
+                    >
+                        <option value="">-- Unassigned --</option>
+                        {teamMembers.map(m => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                    </select>
+                </div>
+             )}
+
+             <ApplicationInfo
+                appData={appData}
+                fileUrls={fileUrls}
+                isEditing={isEditing}
+                isUploading={isUploading}
+                handleDataChange={handleDataChange}
+                handleAdminFileUpload={handleAdminFileUpload}
+                handleAdminFileDelete={handleAdminFileDelete}
+                companyId={companyId}
+                applicationId={applicationId}
+                currentStatus={currentStatus}
+                handleStatusUpdate={handleStatusUpdate}
+                isCompanyAdmin={isCompanyAdmin} 
+                isSuperAdmin={isSuperAdmin}
+                onPhoneClick={onPhoneClick} 
+             />
+          </div>
         );
       case 'dqFile': 
-        // Pass collectionName to fetch from the right place
         return <DQFileTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />;
       case 'documents': 
-        // Pass collectionName
         return <GeneralDocumentsTab companyId={companyId} applicationId={applicationId} appData={appData} fileUrls={fileUrls} collectionName={collectionName} />;
       case 'notes': 
-        // Pass collectionName
         return <NotesTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />; 
+      case 'activity':
+        return <ActivityHistoryTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />;
       default: return null;
     }
   };
@@ -309,20 +157,13 @@ export function ApplicationDetailView({
             </h3>
             
             {!loading && appData && appData.phone && (
-                <button 
-                    onClick={onPhoneClick}
-                    className="p-2 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors"
-                    title="Call Driver"
-                >
+                <button onClick={onPhoneClick} className="p-2 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors" title="Call Driver">
                     <Phone size={20} />
                 </button>
             )}
 
             {['Approved', 'Background Check', 'Contacted'].includes(currentStatus) && (
-                <button 
-                    onClick={() => setShowOfferModal(true)}
-                    className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded-full shadow-sm hover:bg-green-700 transition flex items-center gap-1"
-                >
+                <button onClick={() => setShowOfferModal(true)} className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded-full shadow-sm hover:bg-green-700 transition flex items-center gap-1">
                     <FileSignature size={14} /> Send Offer
                 </button>
             )}
@@ -340,11 +181,12 @@ export function ApplicationDetailView({
       </div>
       
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 flex items-center px-4 sm:px-6 shrink-0">
+      <div className="bg-white border-b border-gray-200 flex items-center px-4 sm:px-6 shrink-0 overflow-x-auto">
         <TabButton label="Application" icon={<FileText size={16} />} isActive={activeTab === 'application'} onClick={() => setActiveTab('application')} />
         <TabButton label="DQ File" icon={<UserCheck size={16} />} isActive={activeTab === 'dqFile'} onClick={() => setActiveTab('dqFile')} />
         <TabButton label="Documents" icon={<Folder size={16} />} isActive={activeTab === 'documents'} onClick={() => setActiveTab('documents')} />
         <TabButton label="Notes" icon={<MessageSquare size={16} />} isActive={activeTab === 'notes'} onClick={() => setActiveTab('notes')} />
+        <TabButton label="Activity" icon={<Clock size={16} />} isActive={activeTab === 'activity'} onClick={() => setActiveTab('activity')} />
       </div>
       
       {/* Body */}
@@ -382,7 +224,6 @@ export function ApplicationDetailView({
         )}
       </footer>
 
-      {/* Modals */}
       {showDeleteConfirm && <DeleteConfirmModal appName={currentAppName} companyId={companyId} applicationId={applicationId} onClose={() => setShowDeleteConfirm(false)} onDeletionComplete={handleManagementComplete} />}
       {showMoveModal && isSuperAdmin && <MoveApplicationModal sourceCompanyId={companyId} applicationId={applicationId} onClose={() => setShowMoveModal(false)} onMoveComplete={handleManagementComplete} />}
       

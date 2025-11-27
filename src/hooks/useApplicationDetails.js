@@ -1,10 +1,10 @@
 // src/hooks/useApplicationDetails.js
 import { useState, useEffect, useCallback } from 'react';
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, storage } from '../firebase/config';
 import { getCompanyProfile } from '../firebase/firestore';
-import { getFileUrl } from '../firebase/storage'; // Reuse existing helper if available, or use logic below
+import { logActivity } from '../utils/activityLogger';
 
 export function useApplicationDetails(companyId, applicationId, onStatusUpdate) {
   const [loading, setLoading] = useState(true);
@@ -13,35 +13,53 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   // Data State
   const [appData, setAppData] = useState(null);
   const [companyProfile, setCompanyProfile] = useState(null);
-  const [collectionName, setCollectionName] = useState('applications'); // 'applications' or 'leads'
+  const [collectionName, setCollectionName] = useState('applications');
   
-  // UI State for Edits/Uploads
+  // UI State
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   // URLs & Status
-  const [fileUrls, setFileUrls] = useState({ cdl: null, ssc: null, medical: null, twic: null, mvrConsent: null, drugTestConsent: null });
+  const [fileUrls, setFileUrls] = useState({});
   const [currentStatus, setCurrentStatus] = useState('');
 
-  // --- LOAD DATA ---
+  // Assignment State
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [assignedTo, setAssignedTo] = useState('');
+
+  // --- 1. Fetch Team for Assignment ---
+  useEffect(() => {
+      if(!companyId) return;
+      const fetchTeam = async () => {
+          try {
+              const q = query(collection(db, "memberships"), where("companyId", "==", companyId));
+              const snap = await getDocs(q);
+              const members = [];
+              for(const m of snap.docs) {
+                  const uSnap = await getDoc(doc(db, "users", m.data().userId));
+                  if(uSnap.exists()) members.push({ id: uSnap.id, name: uSnap.data().name });
+              }
+              setTeamMembers(members);
+          } catch(e) { console.error("Team fetch error", e); }
+      };
+      fetchTeam();
+  }, [companyId]);
+
+  // --- 2. Load Application ---
   const loadApplication = useCallback(async () => {
     if (!companyId || !applicationId) return;
     setLoading(true);
     setError('');
     
     try {
-      // 1. Fetch Company Profile
       const companyProf = await getCompanyProfile(companyId);
       setCompanyProfile(companyProf);
 
-      // 2. Determine Collection & Fetch Doc
-      // Try 'applications' first
       let coll = 'applications';
       let docRef = doc(db, "companies", companyId, coll, applicationId);
       let docSnap = await getDoc(docRef);
 
-      // If not found, try 'leads'
       if (!docSnap.exists()) {
           coll = 'leads';
           docRef = doc(db, "companies", companyId, coll, applicationId);
@@ -53,27 +71,20 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         const data = docSnap.data();
         setAppData(data);
         setCurrentStatus(data.status || 'New Application');
+        setAssignedTo(data.assignedTo || '');
         
-        // Helper to get URL
         const getUrl = async (fileData) => {
           if (!fileData) return null;
           if (fileData.storagePath) {
-             try {
-                 return await getDownloadURL(ref(storage, fileData.storagePath));
-             } catch (e) { return null; }
+             try { return await getDownloadURL(ref(storage, fileData.storagePath)); } catch (e) { return null; }
           }
           return fileData.url || null; 
         };
 
-        // Fetch file URLs
         const [cdl, cdlBack, ssc, medical, twic, mvrConsent, drugTestConsent] = await Promise.all([
-          getUrl(data['cdl-front']),
-          getUrl(data['cdl-back']),
-          getUrl(data['ssc-upload']),
-          getUrl(data['med-card-upload']),
-          getUrl(data['twic-card-upload']),
-          getUrl(data['mvr-consent-upload']),
-          getUrl(data['drug-test-consent-upload'])
+          getUrl(data['cdl-front']), getUrl(data['cdl-back']), getUrl(data['ssc-upload']),
+          getUrl(data['med-card-upload']), getUrl(data['twic-card-upload']),
+          getUrl(data['mvr-consent-upload']), getUrl(data['drug-test-consent-upload'])
         ]);
 
         setFileUrls({ cdl, cdlBack, ssc, medical, twic, mvrConsent, drugTestConsent });
@@ -93,7 +104,25 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
     loadApplication();
   }, [loadApplication]);
 
-  // --- HANDLERS ---
+  // --- Handlers ---
+
+  const handleAssignChange = async (newUserId) => {
+      setAssignedTo(newUserId);
+      const docRef = doc(db, "companies", companyId, collectionName, applicationId);
+      const newOwnerName = teamMembers.find(m => m.id === newUserId)?.name || 'Unassigned';
+
+      try {
+          await updateDoc(docRef, { 
+              assignedTo: newUserId,
+              assignedToName: newOwnerName
+          });
+          await logActivity(companyId, collectionName, applicationId, "Assigned Updated", `Assigned to ${newOwnerName}`);
+          if (onStatusUpdate) onStatusUpdate();
+      } catch (error) {
+          console.error("Error assigning:", error);
+          alert("Failed to update assignment.");
+      }
+  };
 
   const handleDataChange = (field, value) => {
     setAppData(prev => ({ ...prev, [field]: value }));
@@ -103,14 +132,11 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
     if (!file) return;
     setIsUploading(true);
     
-    // Delete old file if exists
     const oldStoragePath = appData[fieldKey]?.storagePath;
     if (oldStoragePath) {
-        try { await deleteObject(ref(storage, oldStoragePath)); } catch (e) { console.warn(e); }
+        try { await deleteObject(ref(storage, oldStoragePath)); } catch (e) {}
     }
 
-    // Upload new file
-    // Note: We store in 'applications' folder even for leads to keep storage rules simple
     const storagePath = `companies/${companyId}/applications/${applicationId}/${fieldKey}-${file.name}`;
     const fileRef = ref(storage, storagePath);
 
@@ -122,10 +148,10 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         setAppData(prev => ({ ...prev, [fieldKey]: fileData }));
         setFileUrls(prev => ({ ...prev, [fieldKey]: newUrl }));
         
-        // Update Firestore (Dynamic Path)
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, { [fieldKey]: fileData });
-        
+        await logActivity(companyId, collectionName, applicationId, "File Uploaded", `Uploaded ${fieldKey}`);
+
     } catch (error) {
         alert("File upload failed.");
     } finally {
@@ -134,16 +160,16 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   };
   
   const handleAdminFileDelete = async (fieldKey, storagePath) => {
-    if (!storagePath || !window.confirm("Are you sure you want to remove this file?")) return;
+    if (!storagePath || !window.confirm("Remove file?")) return;
     setIsUploading(true);
     try {
         await deleteObject(ref(storage, storagePath));
         setAppData(prev => ({ ...prev, [fieldKey]: null }));
         setFileUrls(prev => ({ ...prev, [fieldKey]: null }));
         
-        // Update Firestore
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, { [fieldKey]: null });
+        await logActivity(companyId, collectionName, applicationId, "File Deleted", `Deleted ${fieldKey}`);
 
     } catch (error) {
         alert("File deletion failed.");
@@ -155,9 +181,9 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   const handleSaveEdit = async () => {
     setIsSaving(true);
     try {
-        // Save using dynamic path
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, appData);
+        await logActivity(companyId, collectionName, applicationId, "Details Updated", "Edited application details");
         setIsEditing(false);
         if (onStatusUpdate) onStatusUpdate(); 
     } catch (error) {
@@ -171,6 +197,7 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
     try {
       const docRef = doc(db, "companies", companyId, collectionName, applicationId);
       await updateDoc(docRef, { status: newStatus });
+      await logActivity(companyId, collectionName, applicationId, "Status Changed", `Status changed to ${newStatus}`);
       setCurrentStatus(newStatus);
       if (onStatusUpdate) onStatusUpdate();
     } catch (error) {
@@ -180,21 +207,9 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   };
 
   return {
-    loading,
-    error,
-    appData,
-    companyProfile,
-    collectionName,
-    fileUrls,
-    currentStatus,
-    isEditing, setIsEditing,
-    isSaving,
-    isUploading,
-    loadApplication, // Exposed in case we need to reload manually
-    handleDataChange,
-    handleAdminFileUpload,
-    handleAdminFileDelete,
-    handleSaveEdit,
-    handleStatusUpdate
+    loading, error, appData, companyProfile, collectionName, fileUrls, currentStatus,
+    isEditing, setIsEditing, isSaving, isUploading,
+    teamMembers, assignedTo, handleAssignChange,
+    loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate
   };
 }
