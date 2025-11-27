@@ -1,6 +1,6 @@
 // src/hooks/useCompanyLeadUpload.js
 import { useState, useEffect } from 'react';
-import { db } from '../firebase/config';
+import { db, auth } from '../firebase/config';
 import { writeBatch, collection, doc, serverTimestamp, query, where, getDocs, getDoc } from 'firebase/firestore';
 
 export function useCompanyLeadUpload(companyId, onUploadComplete) {
@@ -39,6 +39,14 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
         throw new Error("Please select a user for assignment.");
     }
 
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+        throw new Error("You must be logged in to upload leads.");
+    }
+
+    // Fetch current user's name for the log (fallback to email if name missing)
+    const currentUserName = currentUser.displayName || currentUser.email || "Admin";
+
     setUploading(true);
     setProgress('Syncing leads to database...');
     
@@ -46,7 +54,10 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
     let updatedCount = 0;
 
     try {
-        const batchSize = 450; 
+        // Firestore batch limit is 500 operations. 
+        // Each lead involves 2 operations: 1 write/update to 'leads' + 1 write to 'activity_logs'
+        // Safe batch size = 200 leads (400 operations)
+        const batchLimit = 200; 
         let currentBatch = writeBatch(db);
         let opCount = 0;
         let rrIndex = 0;
@@ -86,19 +97,28 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
             }
 
             const leadPayload = {
-                firstName: data.firstName,
-                lastName: data.lastName,
-                email: data.email,
-                phone: data.phone, 
-                experience: data.experience,
-                driverType: data.driverType,
+                firstName: data.firstName || '',
+                lastName: data.lastName || '',
+                email: data.email || '',
+                phone: data.phone || '', 
+                experience: data.experience || '',
+                driverType: data.driverType || '',
                 source: importMethod === 'gsheet' ? 'Company Import (Sheet)' : 'Company Import (File)',
                 isPlatformLead: false,
                 updatedAt: serverTimestamp()
             };
 
+            // Prepare Common Log Data
+            // FIX: Adding performedBy is critical for security rules
+            const logData = {
+                type: 'system',
+                performedBy: currentUser.uid,
+                performedByName: currentUserName,
+                timestamp: serverTimestamp()
+            };
+
             if (!existingDoc) {
-                // CREATE
+                // CREATE NEW LEAD
                 leadPayload.status = 'New Lead';
                 leadPayload.createdAt = serverTimestamp();
                 leadPayload.assignedTo = assignedTo;
@@ -107,42 +127,44 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
                 const newLeadRef = doc(collection(db, "companies", companyId, "leads"));
                 currentBatch.set(newLeadRef, leadPayload);
                 
-                // Activity Log
+                // Activity Log: Created
                 const logRef = collection(db, "companies", companyId, "leads", newLeadRef.id, "activity_logs");
                 const logDoc = doc(logRef);
+                
                 currentBatch.set(logDoc, {
+                    ...logData,
                     action: "Lead Imported",
-                    details: `Imported via Bulk Upload. ${assignedToName ? `Assigned to ${assignedToName}` : 'Unassigned'}`,
-                    type: 'system',
-                    timestamp: serverTimestamp()
+                    details: `Imported via Bulk Upload. ${assignedToName ? `Assigned to ${assignedToName}` : 'Unassigned'}`
                 });
 
                 createdCount++;
             } else {
-                // UPDATE
+                // UPDATE EXISTING LEAD
                 const docRef = doc(db, "companies", companyId, "leads", existingDoc.id);
                 currentBatch.update(docRef, leadPayload);
                 
+                // Activity Log: Updated
                 const logRef = collection(db, "companies", companyId, "leads", existingDoc.id, "activity_logs");
                 const logDoc = doc(logRef);
+                
                 currentBatch.set(logDoc, {
+                    ...logData,
                     action: "Lead Data Updated",
-                    details: "Updated via Bulk Upload match.",
-                    type: 'system',
-                    timestamp: serverTimestamp()
+                    details: "Updated via Bulk Upload match."
                 });
 
                 updatedCount++;
             }
 
             opCount++;
-            if (opCount >= 200) { 
+            if (opCount >= batchLimit) { 
                 await currentBatch.commit();
                 currentBatch = writeBatch(db);
                 opCount = 0;
             }
         }
 
+        // Commit remaining operations
         if (opCount > 0) {
             await currentBatch.commit();
         }
@@ -155,7 +177,8 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
         }, 1500);
 
     } catch (err) {
-        throw err;
+        console.error("Batch Upload Error:", err);
+        throw new Error(err.message || "Upload failed. Check permissions.");
     } finally {
         setUploading(false);
     }
