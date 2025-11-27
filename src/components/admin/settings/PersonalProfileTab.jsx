@@ -1,31 +1,80 @@
 // src/components/admin/settings/PersonalProfileTab.jsx
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
 import { db } from '../../../firebase/config';
-import { Save, Loader2, Link as LinkIcon, Copy, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Save, Loader2, Link as LinkIcon, Copy, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useToast } from '../../feedback/ToastProvider';
 
 export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
     const { showSuccess, showError } = useToast();
     const [personalData, setPersonalData] = useState({ name: '' });
+    const [recruitingCode, setRecruitingCode] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [linkLoading, setLinkLoading] = useState(true);
     const [copied, setCopied] = useState(false);
 
+    // --- CONFIGURATION ---
+    const getDriverAppUrl = () => {
+        let url = import.meta.env.VITE_DRIVER_APP_URL || window.location.origin;
+        return url.replace(/\/$/, "");
+    };
+
     useEffect(() => {
-        const fetchUser = async () => {
+        const fetchUserAndCode = async () => {
             if (currentUser?.uid) {
                 try {
-                    const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+                    // 1. Get User Profile
+                    const userDocRef = doc(db, "users", currentUser.uid);
+                    const userDoc = await getDoc(userDocRef);
+                    
                     if (userDoc.exists()) {
-                        setPersonalData({ name: userDoc.data().name || '' });
+                        const data = userDoc.data();
+                        setPersonalData({ name: data.name || '' });
+                        
+                        // 2. Check for existing Short Code
+                        if (data.recruitingCode) {
+                            setRecruitingCode(data.recruitingCode);
+                            setLinkLoading(false);
+                        } else {
+                            // 3. If no code, generate one automatically
+                            await generateShortCode(currentUser.uid);
+                        }
                     }
                 } catch (e) {
-                    console.error("Error fetching user profile:", e);
+                    console.error("Error fetching profile:", e);
+                    setLinkLoading(false);
                 }
             }
         };
-        fetchUser();
+        fetchUserAndCode();
     }, [currentUser]);
+
+    const generateShortCode = async (uid) => {
+        setLinkLoading(true);
+        try {
+            // Generate 6-char alphanumeric code (e.g., "9A2K5X")
+            const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+            
+            // 1. Create Mapping Doc (Publicly Readable)
+            await setDoc(doc(db, "recruiter_links", code), {
+                userId: uid,
+                companyId: currentCompanyProfile.id,
+                createdAt: new Date()
+            });
+
+            // 2. Save Code to User Profile (Private)
+            await updateDoc(doc(db, "users", uid), {
+                recruitingCode: code
+            });
+
+            setRecruitingCode(code);
+        } catch (err) {
+            console.error("Error generating link:", err);
+            showError("Could not generate tracking link.");
+        } finally {
+            setLinkLoading(false);
+        }
+    };
 
     const handleSavePersonal = async () => {
         setLoading(true);
@@ -41,26 +90,19 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
         }
     };
 
-    // --- DYNAMIC URL LOGIC ---
-    // 1. Priority: Use the VITE_DRIVER_APP_URL environment variable (Set this in Vercel for production)
-    // 2. Fallback: Use the current window domain (window.location.origin)
-    const getDriverAppUrl = () => {
-        let url = import.meta.env.VITE_DRIVER_APP_URL || window.location.origin;
-        // Remove trailing slash if present to avoid double slashes
-        return url.replace(/\/$/, "");
-    };
-
-    // Generate Unique Link
+    // Generate Short Unique Link
     const driverAppUrl = getDriverAppUrl();
     const companySlug = currentCompanyProfile?.appSlug || 'general';
-    const recruiterId = currentUser?.uid || '';
     
-    const uniqueLink = `${driverAppUrl}/apply/${companySlug}?recruiter=${recruiterId}`;
+    // Use the Short Code ('r') if available, otherwise fallback to Long ID ('recruiter')
+    const uniqueLink = recruitingCode 
+        ? `${driverAppUrl}/apply/${companySlug}?r=${recruitingCode}`
+        : `${driverAppUrl}/apply/${companySlug}?recruiter=${currentUser?.uid}`;
 
     const handleCopyLink = () => {
         navigator.clipboard.writeText(uniqueLink);
         setCopied(true);
-        showSuccess("Link copied to clipboard!");
+        showSuccess("Short link copied!");
         setTimeout(() => setCopied(false), 2000);
     };
 
@@ -78,28 +120,33 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
                         <LinkIcon size={24} />
                     </div>
                     <div className="flex-1">
-                        <h3 className="text-lg font-bold text-blue-900 mb-1">Your Unique Recruiting Link</h3>
+                        <h3 className="text-lg font-bold text-blue-900 mb-1">Your Short Recruiting Link</h3>
                         <p className="text-sm text-blue-700 mb-4">
-                            Share this link on social media or in emails. Drivers who apply through this link will be <strong>automatically assigned to you</strong>.
+                            Share this link. Drivers who apply will be <strong>automatically assigned to you</strong>.
                         </p>
                         
-                        <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-blue-200">
-                            <code className="flex-1 text-xs sm:text-sm font-mono text-gray-600 truncate px-2">
-                                {uniqueLink}
-                            </code>
-                            <button 
-                                onClick={handleCopyLink}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-md transition-all flex items-center gap-2"
-                            >
-                                {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
-                                {copied ? "Copied" : "Copy"}
-                            </button>
-                        </div>
-                        
-                        {/* Helper Tip for Admin */}
+                        {linkLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-gray-500">
+                                <Loader2 className="animate-spin" size={16} /> Generating unique code...
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-blue-200">
+                                <code className="flex-1 text-xs sm:text-sm font-mono text-gray-600 truncate px-2">
+                                    {uniqueLink}
+                                </code>
+                                <button 
+                                    onClick={handleCopyLink}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-md transition-all flex items-center gap-2"
+                                >
+                                    {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
+                                    {copied ? "Copied" : "Copy"}
+                                </button>
+                            </div>
+                        )}
+
                         {!import.meta.env.VITE_DRIVER_APP_URL && (
                             <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
-                                <AlertTriangle size={10} /> Note: If your Driver App is on a different domain, add <code>VITE_DRIVER_APP_URL</code> to your environment variables.
+                                <AlertTriangle size={10} /> Note: Localhost URL in use. Configure VITE_DRIVER_APP_URL for production.
                             </p>
                         )}
                     </div>
