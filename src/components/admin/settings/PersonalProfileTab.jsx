@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from '../../../firebase/config';
-import { Save, Loader2, Link as LinkIcon, Copy, CheckCircle } from 'lucide-react';
+import { Save, Loader2, Link as LinkIcon, Copy, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../feedback/ToastProvider';
 
 export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
@@ -10,10 +10,6 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
     const [personalData, setPersonalData] = useState({ name: '' });
     const [loading, setLoading] = useState(false);
     const [copied, setCopied] = useState(false);
-
-    // --- CONFIGURATION: Set this to your actual Driver App URL in production ---
-    const DRIVER_APP_URL = "http://localhost:5173"; 
-    // Example for production: "https://apply.safehaul.com"
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -45,10 +41,21 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
         }
     };
 
+    // --- DYNAMIC URL LOGIC ---
+    // 1. Priority: Use the VITE_DRIVER_APP_URL environment variable (Set this in Vercel for production)
+    // 2. Fallback: Use the current window domain (window.location.origin)
+    const getDriverAppUrl = () => {
+        let url = import.meta.env.VITE_DRIVER_APP_URL || window.location.origin;
+        // Remove trailing slash if present to avoid double slashes
+        return url.replace(/\/$/, "");
+    };
+
     // Generate Unique Link
+    const driverAppUrl = getDriverAppUrl();
     const companySlug = currentCompanyProfile?.appSlug || 'general';
     const recruiterId = currentUser?.uid || '';
-    const uniqueLink = `${DRIVER_APP_URL}/apply/${companySlug}?recruiter=${recruiterId}`;
+    
+    const uniqueLink = `${driverAppUrl}/apply/${companySlug}?recruiter=${recruiterId}`;
 
     const handleCopyLink = () => {
         navigator.clipboard.writeText(uniqueLink);
@@ -64,7 +71,7 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
                 <p className="text-sm text-gray-500 mt-1">Update your personal details and access your recruiting tools.</p>
             </div>
 
-            {/* --- RECRUITING LINK SECTION (NEW) --- */}
+            {/* --- RECRUITING LINK SECTION --- */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-6 shadow-sm">
                 <div className="flex items-start gap-4">
                     <div className="p-3 bg-white rounded-lg shadow-sm text-blue-600">
@@ -88,6 +95,13 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
                                 {copied ? "Copied" : "Copy"}
                             </button>
                         </div>
+                        
+                        {/* Helper Tip for Admin */}
+                        {!import.meta.env.VITE_DRIVER_APP_URL && (
+                            <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
+                                <AlertTriangle size={10} /> Note: If your Driver App is on a different domain, add <code>VITE_DRIVER_APP_URL</code> to your environment variables.
+                            </p>
+                        )}
                     </div>
                 </div>
             </div>
