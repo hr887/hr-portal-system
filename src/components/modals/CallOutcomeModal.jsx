@@ -1,8 +1,8 @@
 // src/components/modals/CallOutcomeModal.jsx
 import React, { useState } from 'react';
-import { db, auth } from '../../firebase/config';
-// Added getDoc to imports
+import { db, auth, functions } from '../../firebase/config';
 import { addDoc, collection, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { Phone, X, Save, Loader2, MessageSquare, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
 
 const OUTCOMES = [
@@ -77,15 +77,44 @@ export function CallOutcomeModal({ lead, companyId, onClose, onUpdate }) {
                 lastContactedAt: serverTimestamp(),
                 lastContactedBy: auth.currentUser.uid
             };
-
-            if (['New Lead', 'New Application', 'Attempted', 'Contacted'].includes(lead.status)) {
+            
+            // Only update status if it's not already in a "final" state like Hired/Rejected (unless outcome forces it)
+            if (['New Lead', 'New Application', 'Attempted', 'Contacted'].includes(lead.status) || ['Rejected', 'Disqualified'].includes(newStatus)) {
                 updateData.status = newStatus;
             }
 
             await updateDoc(docRef, updateData);
 
+            // --- 4. TRIGGER AUTOMATION (New) ---
+            // If No Answer or Voicemail, try to send the automated email
+            if (['no_answer', 'voicemail'].includes(outcome) && lead.email && !lead.email.includes('placeholder.com')) {
+                try {
+                    const sendEmail = httpsCallable(functions, 'sendAutomatedEmail');
+                    
+                    // We don't await this to block the UI, but we trigger it
+                    sendEmail({
+                        companyId,
+                        recipientEmail: lead.email,
+                        triggerType: 'no_answer', // This matches the key in EmailSettingsTab
+                        placeholders: {
+                            driverfullname: `${lead.firstName} ${lead.lastName}`,
+                            driverfirstname: lead.firstName,
+                            recruitername: authorName
+                        }
+                    }).then(result => {
+                        console.log("Automation result:", result.data);
+                    }).catch(err => {
+                        console.error("Automation failed silently:", err);
+                    });
+
+                } catch (emailErr) {
+                    console.error("Failed to initiate automation:", emailErr);
+                }
+            }
+
             if (onUpdate) onUpdate(); 
             onClose();
+
         } catch (error) {
             console.error("Error logging call:", error);
             alert(`Failed to save call log. (Error: ${error.message})`);

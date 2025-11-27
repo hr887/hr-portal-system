@@ -5,11 +5,10 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage
 import { db, storage, auth } from '../firebase/config';
 import { getCompanyProfile } from '../firebase/firestore';
 import { logActivity } from '../utils/activityLogger';
-import { useData } from '../App'; // Import context to check claims
+import { useData } from '../App';
 
 export function useApplicationDetails(companyId, applicationId, onStatusUpdate) {
   const { currentUserClaims } = useData();
-  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -20,7 +19,6 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-
   const [fileUrls, setFileUrls] = useState({});
   const [currentStatus, setCurrentStatus] = useState('');
 
@@ -28,7 +26,6 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   const [assignedTo, setAssignedTo] = useState('');
 
   // Permission Check
-  // Super Admin OR Company Admin can edit. HR User (Recruiter) cannot edit application data.
   const canEdit = 
     currentUserClaims?.roles?.globalRole === 'super_admin' || 
     currentUserClaims?.roles?.[companyId] === 'company_admin';
@@ -81,7 +78,8 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         const getUrl = async (fileData) => {
           if (!fileData) return null;
           if (fileData.storagePath) {
-             try { return await getDownloadURL(ref(storage, fileData.storagePath)); } catch (e) { return null; }
+             try { return await getDownloadURL(ref(storage, fileData.storagePath));
+             } catch (e) { return null; }
           }
           return fileData.url || null; 
         };
@@ -91,7 +89,6 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
           getUrl(data['med-card-upload']), getUrl(data['twic-card-upload']),
           getUrl(data['mvr-consent-upload']), getUrl(data['drug-test-consent-upload'])
         ]);
-
         setFileUrls({ cdl, cdlBack, ssc, medical, twic, mvrConsent, drugTestConsent });
         
       } else {
@@ -115,7 +112,6 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
       setAssignedTo(newUserId);
       const docRef = doc(db, "companies", companyId, collectionName, applicationId);
       const newOwnerName = teamMembers.find(m => m.id === newUserId)?.name || 'Unassigned';
-
       try {
           await updateDoc(docRef, { 
               assignedTo: newUserId,
@@ -140,12 +136,12 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
     
     const oldStoragePath = appData[fieldKey]?.storagePath;
     if (oldStoragePath) {
-        try { await deleteObject(ref(storage, oldStoragePath)); } catch (e) {}
+        try { await deleteObject(ref(storage, oldStoragePath));
+        } catch (e) {}
     }
 
     const storagePath = `companies/${companyId}/${collectionName}/${applicationId}/${fieldKey}-${file.name}`;
     const fileRef = ref(storage, storagePath);
-
     try {
         await uploadBytes(fileRef, file);
         const newUrl = await getDownloadURL(fileRef);
@@ -157,14 +153,13 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, { [fieldKey]: fileData });
         await logActivity(companyId, collectionName, applicationId, "File Uploaded", `Uploaded ${fieldKey}`);
-
     } catch (error) {
         alert("File upload failed.");
     } finally {
         setIsUploading(false);
     }
   };
-  
+
   const handleAdminFileDelete = async (fieldKey, storagePath) => {
     if (!storagePath || !window.confirm("Remove file?") || !canEdit) return;
     setIsUploading(true);
@@ -176,7 +171,6 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, { [fieldKey]: null });
         await logActivity(companyId, collectionName, applicationId, "File Deleted", `Deleted ${fieldKey}`);
-
     } catch (error) {
         alert("File deletion failed.");
     } finally {
@@ -192,7 +186,7 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         await updateDoc(docRef, appData);
         await logActivity(companyId, collectionName, applicationId, "Details Updated", "Admin edited application details");
         setIsEditing(false);
-        if (onStatusUpdate) onStatusUpdate(); 
+        if (onStatusUpdate) onStatusUpdate();
     } catch (error) {
         alert(`Error saving: ${error.message}`);
     } finally {
@@ -213,10 +207,25 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
     }
   };
 
+  // --- NEW: Handle Driver Type Update ---
+  const handleDriverTypeUpdate = async (newType) => {
+    try {
+      const docRef = doc(db, "companies", companyId, collectionName, applicationId);
+      await updateDoc(docRef, { driverType: newType });
+      // Update local state
+      setAppData(prev => ({ ...prev, driverType: newType }));
+      await logActivity(companyId, collectionName, applicationId, "Type Updated", `Driver type changed to ${newType}`);
+    } catch (error) {
+      console.error("Error updating driver type:", error);
+      alert("Failed to update driver type.");
+    }
+  };
+
   return {
     loading, error, appData, companyProfile, collectionName, fileUrls, currentStatus,
     isEditing, setIsEditing, isSaving, isUploading, canEdit,
     teamMembers, assignedTo, handleAssignChange,
-    loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate
+    loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate,
+    handleDriverTypeUpdate // <-- Exported here
   };
 }

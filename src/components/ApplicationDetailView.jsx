@@ -6,9 +6,8 @@ import { useData } from '../App.jsx';
 import { useApplicationDetails } from '../hooks/useApplicationDetails';
 import { 
   Download, X, ArrowRight, Edit2, Save, Trash2, 
-  FileText, UserCheck, Folder, FileSignature, MessageSquare, Phone, Clock, Mail
+  FileText, UserCheck, Folder, FileSignature, MessageSquare, Phone, Clock, Mail, Users
 } from 'lucide-react';
-
 import { ApplicationInfo } from './admin/ApplicationInfo.jsx';
 import { MoveApplicationModal, DeleteConfirmModal } from './admin/ApplicationModals.jsx';
 import { DQFileTab } from './admin/DQFileTab.jsx';
@@ -17,11 +16,6 @@ import { SendOfferModal } from './admin/SendOfferModal.jsx';
 import { NotesTab } from './admin/NotesTab.jsx';
 import { ActivityHistoryTab } from './admin/ActivityHistoryTab.jsx';
 import { ContactTab } from './company/ContactTab.jsx';
-
-const agreementTemplates = [
-  { id: 'agreement-release', title: 'RELEASE AND WAIVER', text: `[COMPANY_NAME] is released from all liability...` },
-  // ... (truncated for brevity, same templates)
-];
 
 // Professional Side Tab
 function SideTab({ label, icon, isActive, onClick }) {
@@ -49,18 +43,18 @@ export function ApplicationDetailView({
   onPhoneClick 
 }) {
   const { currentUserClaims } = useData();
-  
   const {
     loading, error, appData, companyProfile, collectionName, fileUrls, currentStatus,
     isEditing, setIsEditing, isSaving, isUploading, canEdit,
     teamMembers, assignedTo, handleAssignChange,
-    loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate
+    loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate,
+    handleDriverTypeUpdate // <-- Destructured here
   } = useApplicationDetails(companyId, applicationId, onStatusUpdate);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('application'); 
+  const [activeTab, setActiveTab] = useState('application');
 
   const isSuperAdmin = currentUserClaims?.roles?.globalRole === 'super_admin';
   const currentAppName = getFieldValue(appData?.['firstName']) + ' ' + getFieldValue(appData?.['lastName']);
@@ -74,7 +68,7 @@ export function ApplicationDetailView({
       alert("PDF Generation failed.");
     }
   };
-  
+
   const handleManagementComplete = () => {
     if (onStatusUpdate) onStatusUpdate();
     onClosePanel(); 
@@ -100,6 +94,8 @@ export function ApplicationDetailView({
             applicationId={applicationId}
             currentStatus={currentStatus}
             handleStatusUpdate={handleStatusUpdate}
+            // Pass the new handler down
+            handleDriverTypeUpdate={handleDriverTypeUpdate} 
             isCompanyAdmin={isCompanyAdmin} 
             isSuperAdmin={isSuperAdmin}
             onPhoneClick={onPhoneClick} 
@@ -108,22 +104,20 @@ export function ApplicationDetailView({
       case 'contact': return <ContactTab companyId={companyId} recordId={applicationId} collectionName={collectionName} email={appData.email} phone={appData.phone} />;
       case 'dqFile': return <DQFileTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />;
       case 'documents': return <GeneralDocumentsTab companyId={companyId} applicationId={applicationId} appData={appData} fileUrls={fileUrls} collectionName={collectionName} />;
-      case 'notes': return <NotesTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />; 
+      case 'notes': return <NotesTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />;
       case 'activity': return <ActivityHistoryTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />;
       default: return null;
     }
   };
 
   return (
-    // Changed background overlay to be darker for focus
     <div className="fixed inset-0 bg-slate-900/60 z-40 backdrop-blur-sm flex justify-end transition-opacity duration-300" onClick={onClosePanel}>
       
-      {/* Changed width to w-[70%] and max-w-7xl to ensure it isn't too wide on massive screens */}
       <div 
         className="bg-gray-50 w-[85%] md:w-[75%] lg:w-[65%] h-full shadow-2xl flex flex-col border-l border-gray-200 transform transition-transform duration-300"
         onClick={e => e.stopPropagation()}
       >
-      
+        
         {/* Header */}
         <div className="p-6 border-b border-gray-200 bg-white shrink-0 flex justify-between items-center shadow-sm z-10">
             <div>

@@ -1,8 +1,12 @@
 // src/components/admin/ApplicationInfo.jsx
 import React from 'react';
 import { Section, InfoGrid, InfoItem } from './ApplicationUI.jsx';
-import { getFieldValue, formatPhoneNumber } from '../../utils/helpers.js'; // <-- Import helper
-import { Phone, CheckCircle, XCircle, AlertTriangle, FileSignature } from 'lucide-react';
+import { getFieldValue, formatPhoneNumber } from '../../utils/helpers.js';
+import { Phone, CheckCircle, XCircle, AlertTriangle, FileSignature, Truck } from 'lucide-react';
+
+const DRIVER_TYPES = [
+    "Dry Van", "Reefer", "Flatbed", "Box Truck", "Tanker", "Team"
+];
 
 export function ApplicationInfo({ 
   appData, 
@@ -14,6 +18,7 @@ export function ApplicationInfo({
   applicationId,
   currentStatus,
   handleStatusUpdate,
+  handleDriverTypeUpdate, // <-- New Prop for instant header updates
   isCompanyAdmin,
   isSuperAdmin,
   onPhoneClick 
@@ -31,7 +36,7 @@ export function ApplicationInfo({
   return (
     <div className="space-y-6">
       
-      {/* --- STATUS BAR --- */}
+      {/* --- STATUS & TYPE BAR (Header) --- */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-4">
         <div>
            <span className="text-gray-500 text-sm font-semibold uppercase">Current Status</span>
@@ -42,9 +47,24 @@ export function ApplicationInfo({
         </div>
         
         {(isCompanyAdmin || isSuperAdmin) && !isEditing && (
-           <div className="flex gap-2">
+           <div className="flex flex-col sm:flex-row gap-3 items-end sm:items-center w-full sm:w-auto">
+             
+             {/* DRIVER TYPE DROPDOWN (New) */}
+             <div className="relative w-full sm:w-auto">
+                <Truck size={16} className="absolute left-2.5 top-3 text-gray-400 pointer-events-none"/>
+                <select
+                   className="w-full sm:w-48 pl-9 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-300 transition-colors"
+                   value={appData.driverType || ''}
+                   onChange={(e) => handleDriverTypeUpdate(e.target.value)}
+                >
+                    <option value="">-- Set Type --</option>
+                    {DRIVER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+             </div>
+
+             {/* STATUS DROPDOWN */}
              <select 
-               className="p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium"
+               className="w-full sm:w-auto p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-300 transition-colors"
                value={currentStatus}
                onChange={(e) => handleStatusUpdate(e.target.value)}
              >
@@ -72,7 +92,7 @@ export function ApplicationInfo({
              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label>
              {isEditing ? (
                  <input 
-                    className="w-full p-2 border border-gray-300 rounded"
+                    className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
                     value={appData.phone || ''}
                     onChange={(e) => handleDataChange('phone', e.target.value)}
                  />
@@ -123,13 +143,22 @@ export function ApplicationInfo({
 
       {/* --- QUALIFICATIONS & LICENSE --- */}
       <Section title="Qualifications & License">
-         <InfoGrid>
-            <InfoItem label="Experience" value={appData['experience-years']} isEditing={isEditing} onChange={v => handleDataChange('experience-years', v)} />
+          <InfoGrid>
+            {/* NEW DRIVER TYPE FIELD IN EDIT MODE */}
+            <InfoItem 
+                label="Driver Type / Position" 
+                value={appData.driverType || appData.positionApplyingTo} 
+                isEditing={isEditing} 
+                onChange={v => handleDataChange('driverType', v)} 
+                options={DRIVER_TYPES} 
+            />
+
+            <InfoItem label="Experience" value={appData['experience-years'] || appData.experience} isEditing={isEditing} onChange={v => handleDataChange('experience-years', v)} />
             
             <div className="col-span-1">
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Legal to Work?</label>
                 <div className="flex items-center gap-2 h-10">
-                    {appData['legal-work'] === 'yes' ? <CheckCircle className="text-green-500" size={20}/> : <XCircle className="text-red-500" size={20}/>}
+                     {appData['legal-work'] === 'yes' ? <CheckCircle className="text-green-500" size={20}/> : <XCircle className="text-red-500" size={20}/>}
                     <span className="text-gray-900">{appData['legal-work'] === 'yes' ? 'Authorized' : 'Not Authorized'}</span>
                 </div>
             </div>

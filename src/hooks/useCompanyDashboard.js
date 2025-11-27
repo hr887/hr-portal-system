@@ -14,6 +14,15 @@ export function useCompanyDashboard(companyId) {
 
   const [activeTab, setActiveTab] = useState('applications');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // --- NEW: Filters State ---
+  const [filters, setFilters] = useState({
+      state: '',
+      driverType: '',
+      dob: '',
+      assignee: ''
+  });
+
   const [sortConfig, setSortConfig] = useState({ key: 'submittedAt', direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -31,20 +40,16 @@ export function useCompanyDashboard(companyId) {
       setApplications(appList);
 
       // 1. Platform Leads (SafeHaul Network)
-      // These are leads distributed by Super Admin (where isPlatformLead is explicitly true)
       const pLeads = allLeads.filter(l => l.isPlatformLead === true);
       setPlatformLeads(pLeads);
 
       // 2. Company Leads (Uploaded by Company)
-      // These are leads uploaded via CSV/Sheet by the company (isPlatformLead is false)
       const cLeads = allLeads.filter(l => l.isPlatformLead === false);
       setCompanyLeads(cLeads);
 
       // 3. My Leads (Assigned to ME)
-      // Check assignedTo field against current user UID
       const currentUid = auth.currentUser?.uid;
       if (currentUid) {
-          // Filter from ALL leads (both platform and company imports can be assigned)
           const myL = allLeads.filter(l => l.assignedTo === currentUid);
           setMyLeads(myL);
       } else {
@@ -92,15 +97,35 @@ export function useCompanyDashboard(companyId) {
   };
 
   const filteredList = useMemo(() => {
+    // 1. Text Search
     const term = searchQuery.toLowerCase();
-    const filtered = currentList.filter(item => {
+    let filtered = currentList.filter(item => {
       const name = `${item['firstName'] || ''} ${item['lastName'] || ''}`.toLowerCase();
       const phone = item.phone?.toLowerCase() || '';
       const email = item.email?.toLowerCase() || '';
       return name.includes(term) || phone.includes(term) || email.includes(term);
     });
+
+    // 2. Advanced Filters
+    if (filters.state) {
+        filtered = filtered.filter(item => item.state?.toLowerCase() === filters.state.toLowerCase());
+    }
+    if (filters.driverType) {
+        filtered = filtered.filter(item => {
+            // Check 'driverType' (Leads) or 'positionApplyingTo' (Apps)
+            const type = item.driverType || item.positionApplyingTo || '';
+            return type.toLowerCase().includes(filters.driverType.toLowerCase());
+        });
+    }
+    if (filters.dob) {
+        filtered = filtered.filter(item => item.dob === filters.dob);
+    }
+    if (filters.assignee) {
+        filtered = filtered.filter(item => item.assignedToName?.toLowerCase().includes(filters.assignee.toLowerCase()));
+    }
+
     return sortList(filtered);
-  }, [searchQuery, currentList, sortConfig]);
+  }, [searchQuery, currentList, sortConfig, filters]); // Added filters dependency
 
   const totalPages = Math.ceil(filteredList.length / itemsPerPage) || 1;
   
@@ -111,7 +136,7 @@ export function useCompanyDashboard(companyId) {
 
   useEffect(() => {
       setCurrentPage(1);
-  }, [activeTab, searchQuery, itemsPerPage]);
+  }, [activeTab, searchQuery, itemsPerPage, filters]);
 
   return {
     applications,
@@ -128,6 +153,8 @@ export function useCompanyDashboard(companyId) {
     sortConfig, setSortConfig,
     currentPage, setCurrentPage,
     itemsPerPage, setItemsPerPage,
-    totalPages
+    totalPages,
+    // Export Filters
+    filters, setFilters
   };
 }

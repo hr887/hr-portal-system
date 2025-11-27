@@ -2,27 +2,23 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom'; 
 import { useData } from '../App.jsx';
-import { auth } from '../firebase/config.js'; 
+import { auth } from '../firebase/config.js';
 import { getPortalUser } from '../firebase/firestore.js'; 
 
 // --- CUSTOM HOOKS & COMPONENTS ---
-import { useCompanyDashboard } from '../hooks/useCompanyDashboard'; 
+import { useCompanyDashboard } from '../hooks/useCompanyDashboard';
 import { DashboardTable } from './company/DashboardTable'; 
 import { StatCard } from './company/StatCard.jsx';
-
-// --- Removed LeadDetailPanel (Causing issues & Inconsistent UI) ---
-// We now use ApplicationDetailView for EVERYTHING (Leads & Apps)
 
 import { DriverSearchModal } from './admin/DriverSearchModal.jsx';
 import { NotificationBell } from './feedback/NotificationBell.jsx'; 
 import { CallOutcomeModal } from './modals/CallOutcomeModal.jsx'; 
-import { CompanyBulkUpload } from './CompanyBulkUpload.jsx'; 
+import { CompanyBulkUpload } from './CompanyBulkUpload.jsx';
 import { PerformanceWidget } from './admin/PerformanceWidget.jsx'; 
-import { ApplicationDetailView } from './ApplicationDetailView.jsx'; 
-
+import { ApplicationDetailView } from './ApplicationDetailView.jsx';
 import { 
-  LogOut, Search, FileText, Settings, Zap, Database, 
-  Upload, Replace, Briefcase, Users
+  LogOut, Search, FileText, Settings, Zap, Briefcase, 
+  Upload, Replace, Users
 } from 'lucide-react';
 
 export function CompanyAdminDashboard() {
@@ -58,7 +54,7 @@ export function CompanyAdminDashboard() {
   }, []);
 
   const handlePhoneClick = (e, item) => {
-      if(e) e.stopPropagation(); 
+      if(e) e.stopPropagation();
       if(item && item.phone) {
           window.location.href = `tel:${item.phone}`;
           setCallModalData({ lead: item });
@@ -103,10 +99,10 @@ export function CompanyAdminDashboard() {
 
                 <NotificationBell userId={auth.currentUser?.uid} />
 
-                 <div className="relative ml-2">
+                  <div className="relative ml-2">
                     <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="flex items-center gap-2 focus:outline-none">
                         <div className="w-9 h-9 rounded-full bg-gray-100 border border-gray-200 text-gray-600 flex items-center justify-center font-bold text-sm hover:bg-gray-200 transition">
-                            {userName.charAt(0).toUpperCase()}
+                             {userName.charAt(0).toUpperCase()}
                         </div>
                     </button>
                     {isUserMenuOpen && (
@@ -129,7 +125,8 @@ export function CompanyAdminDashboard() {
         </header>
 
         <div className="flex-1 overflow-hidden flex flex-col max-w-[1600px] mx-auto w-full p-4 sm:p-6">
-            {/* --- STATS ROW --- */}
+       
+             {/* --- STATS ROW --- */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6 shrink-0">
                  <StatCard 
                     title="Applications" 
@@ -139,7 +136,7 @@ export function CompanyAdminDashboard() {
                     colorClass="ring-blue-500 bg-blue-500"
                     onClick={() => dashboard.setActiveTab('applications')}
                 />
-                <StatCard 
+               <StatCard 
                     title="SafeHaul Leads" 
                     value={dashboard.platformLeads.length} 
                     icon={<Zap size={20}/>} 
@@ -186,6 +183,10 @@ export function CompanyAdminDashboard() {
                     searchQuery={dashboard.searchQuery}
                     setSearchQuery={dashboard.setSearchQuery}
                     
+                    // --- NEW FILTERS ---
+                    filters={dashboard.filters}
+                    setFilters={dashboard.setFilters}
+
                     currentPage={dashboard.currentPage}
                     setCurrentPage={dashboard.setCurrentPage}
                     itemsPerPage={dashboard.itemsPerPage}

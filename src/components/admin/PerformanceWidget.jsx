@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../../firebase/config';
 import { collectionGroup, query, where, getDocs, doc, getDoc, Timestamp, collection } from 'firebase/firestore';
-import { Trophy, Phone, Users, Loader2 } from 'lucide-react';
-import { useData } from '../../App.jsx'; // Import context
+import { Trophy, Phone, Users, Loader2, Medal } from 'lucide-react';
+import { useData } from '../../App.jsx';
 
 export function PerformanceWidget({ companyId }) {
   const [leaderboard, setLeaderboard] = useState([]);
@@ -24,7 +24,6 @@ export function PerformanceWidget({ companyId }) {
             const memberRef = collection(db, "memberships");
             const memberSnap = await getDocs(query(memberRef, where("companyId", "==", companyId)));
             
-            // Map member details including role
             const members = memberSnap.docs.map(d => ({ userId: d.data().userId, role: d.data().role }));
 
             if (members.length === 0) {
@@ -33,22 +32,19 @@ export function PerformanceWidget({ companyId }) {
                 return;
             }
 
-            // Check Viewer Permissions
             const isViewerAdmin = currentUserClaims?.roles?.[companyId] === 'company_admin' || currentUserClaims?.roles?.globalRole === 'super_admin';
 
-            // 2. Fetch Real Names & Goals for ALL members (Parallel Fetch)
+            // 2. Fetch Real Names & Goals
             const memberDataPromises = members.map(async (member) => {
-                // FILTER: If viewer is NOT admin, skip Admins in list
+                // If viewer is NOT admin, hide other Admins from the list (optional, keeping logic from before)
                 if (!isViewerAdmin && member.role === 'company_admin') {
-                    return null;
+                   return null;
                 }
 
                 const uid = member.userId;
                 let name = 'Unknown User';
-                let callGoal = 150;
-                let contactGoal = 50;
 
-                // A. Fetch Profile Name
+                // Fetch Profile Name
                 try {
                     const userDoc = await getDoc(doc(db, 'users', uid));
                     if (userDoc.exists() && userDoc.data().name) {
@@ -56,28 +52,16 @@ export function PerformanceWidget({ companyId }) {
                     }
                 } catch (e) { console.warn(`Failed to fetch user ${uid}`, e); }
 
-                // B. Fetch Goals
-                try {
-                    const settingsSnap = await getDoc(doc(db, "companies", companyId, "team", uid));
-                    if (settingsSnap.exists()) {
-                        const data = settingsSnap.data();
-                        if (data.callGoal) callGoal = data.callGoal;
-                        if (data.contactGoal) contactGoal = data.contactGoal;
-                    }
-                } catch (e) { /* use defaults */ }
-
                 return {
                     uid,
                     name,
-                    callGoal,
-                    contactGoal,
                     dials: new Set(),
                     contacts: 0
                 };
             });
 
             const results = await Promise.all(memberDataPromises);
-            const validMembers = results.filter(m => m !== null); // Remove filtered out admins
+            const validMembers = results.filter(m => m !== null);
             
             const statsMap = {};
             validMembers.forEach(m => {
@@ -109,14 +93,16 @@ export function PerformanceWidget({ companyId }) {
             });
 
             // 5. Format & Sort
+            // Sort Priority: Contacts (Desc) -> Dials (Desc)
             const lb = Object.values(statsMap).map(user => ({
                 uid: user.uid,
                 name: user.name,
                 dials: user.dials.size,
-                contacts: user.contacts,
-                callGoal: user.callGoal,
-                contactGoal: user.contactGoal
-            })).sort((a, b) => b.contacts - a.contacts); 
+                contacts: user.contacts
+            })).sort((a, b) => {
+                if (b.contacts !== a.contacts) return b.contacts - a.contacts;
+                return b.dials - a.dials;
+            });
 
             setLeaderboard(lb);
 
@@ -126,61 +112,75 @@ export function PerformanceWidget({ companyId }) {
             setLoading(false);
         }
     };
-
     fetchData();
   }, [companyId, currentUserClaims]);
 
-  if (loading) return <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 h-full flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
+  if (loading) return (
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 h-40 flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-600" />
+    </div>
+  );
 
   return (
-    <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 h-full flex flex-col">
-        <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                <Trophy size={20} className="text-yellow-500"/> Daily Leaderboard
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 h-40 flex flex-col relative overflow-hidden">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-3 shrink-0 z-10 bg-white border-b border-gray-50 pb-2">
+            <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                <Trophy size={16} className="text-yellow-500 fill-yellow-500"/> Daily Leaderboard
             </h3>
-            <span className="text-xs font-medium text-gray-400">Today's Activity</span>
+            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Top Performers</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-1 space-y-3 custom-scrollbar">
+        {/* Scrollable List */}
+        <div className="flex-1 overflow-y-auto pr-1 space-y-1 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
             {leaderboard.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm">
-                    No active team members found.
+                <div className="text-center py-6 text-gray-400 text-xs italic">
+                    No activity recorded today.
                 </div>
             ) : (
                 leaderboard.map((user, index) => {
                     const isMe = user.uid === auth.currentUser?.uid;
-                    const callPct = Math.min(100, Math.round((user.dials / user.callGoal) * 100));
-                    const contactPct = Math.min(100, Math.round((user.contacts / user.contactGoal) * 100));
+                    
+                    // Styling for Rank
+                    let rankStyle = "bg-gray-100 text-gray-500";
+                    let rankContent = index + 1;
+
+                    if (index === 0) { 
+                        rankStyle = "bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200"; 
+                        rankContent = <Medal size={12} className="fill-yellow-500 text-yellow-600"/>;
+                    } else if (index === 1) { 
+                        rankStyle = "bg-slate-100 text-slate-700 ring-1 ring-slate-200"; 
+                        rankContent = <Medal size={12} className="fill-slate-300 text-slate-500"/>;
+                    } else if (index === 2) { 
+                        rankStyle = "bg-orange-50 text-orange-800 ring-1 ring-orange-200"; 
+                        rankContent = <Medal size={12} className="fill-orange-300 text-orange-600"/>;
+                    }
 
                     return (
-                        <div key={user.uid} className={`p-3 rounded-lg border ${isMe ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300' : 'bg-white border-gray-100'}`}>
-                            <div className="flex items-center gap-3 mb-3">
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${index === 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>
-                                    {index + 1}
+                        <div 
+                            key={user.uid} 
+                            className={`flex items-center justify-between p-1.5 rounded-lg border transition-colors ${isMe ? 'bg-blue-50 border-blue-200' : 'bg-white border-transparent hover:bg-gray-50 hover:border-gray-100'}`}
+                        >
+                            {/* Left: Rank & Name */}
+                            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${rankStyle}`}>
+                                    {rankContent}
                                 </div>
-                                <span className="font-bold text-sm text-gray-800 truncate w-full" title={user.name}>
+                                <span className={`text-xs font-semibold truncate ${isMe ? 'text-blue-700' : 'text-gray-700'}`}>
                                     {user.name} {isMe && '(You)'}
                                 </span>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
-                                        <span className="flex items-center gap-1"><Phone size={10}/> Dials</span>
-                                        <span>{user.dials}/{user.callGoal}</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                        <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-1000" style={{width: `${callPct}%`}}></div>
-                                    </div>
+                            {/* Right: Stats */}
+                            <div className="flex items-center gap-3 shrink-0 pl-2">
+                                <div className="flex flex-col items-center min-w-[24px]">
+                                    <div className="text-[8px] text-gray-400 uppercase leading-none mb-0.5">Dial</div>
+                                    <div className="text-xs font-bold text-gray-600 leading-none">{user.dials}</div>
                                 </div>
-                                <div>
-                                    <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500 mb-1">
-                                        <span className="flex items-center gap-1"><Users size={10}/> Contacts</span>
-                                        <span className="text-green-700">{user.contacts}/{user.contactGoal}</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                        <div className="bg-green-500 h-1.5 rounded-full transition-all duration-1000" style={{width: `${contactPct}%`}}></div>
-                                    </div>
+                                <div className="w-px h-4 bg-gray-200"></div>
+                                <div className="flex flex-col items-center min-w-[24px]">
+                                    <div className="text-[8px] text-gray-400 uppercase leading-none mb-0.5">Cont</div>
+                                    <div className="text-xs font-bold text-green-600 leading-none">{user.contacts}</div>
                                 </div>
                             </div>
                         </div>
@@ -188,6 +188,9 @@ export function PerformanceWidget({ companyId }) {
                 })
             )}
         </div>
+        
+        {/* Subtle fade overlay at the bottom to indicate more scrollable content */}
+        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-white via-white/50 to-transparent pointer-events-none"></div>
     </div>
   );
 }

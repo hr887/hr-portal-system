@@ -3,6 +3,7 @@
 const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const nodemailer = require("nodemailer");
 
 // Initialize the Firebase Admin App
 admin.initializeApp();
@@ -40,7 +41,6 @@ async function processDriverData(data) {
 
   // 2. Create/Update Master Profile
   const driverDocRef = db.collection("drivers").doc(driverUid);
-  
   const masterProfileData = {
     personalInfo: {
       firstName: data.firstName || "",
@@ -67,7 +67,6 @@ async function processDriverData(data) {
     ],
     lastApplicationDate: admin.firestore.FieldValue.serverTimestamp()
   };
-
   await driverDocRef.set(masterProfileData, { merge: true });
   console.log(`Successfully synced profile for ${email}`);
 }
@@ -110,9 +109,8 @@ exports.createPortalUser = onCall(async (request) => {
   }
 });
 
-// --- EXPORT 2: Delete Portal User (NEW - Fixes your error) ---
+// --- EXPORT 2: Delete Portal User ---
 exports.deletePortalUser = onCall(async (request) => {
-  // 1. Security Checks
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
   
   const callerClaims = request.auth.token.roles || {};
@@ -126,13 +124,9 @@ exports.deletePortalUser = onCall(async (request) => {
   const db = admin.firestore();
 
   try {
-    // 2. Delete from Firebase Authentication
     await admin.auth().deleteUser(userId);
-
-    // 3. Delete User Profile Document
     await db.collection("users").doc(userId).delete();
 
-    // 4. Delete all Memberships associated with this user
     const membershipsSnap = await db.collection("memberships").where("userId", "==", userId).get();
     const batch = db.batch();
     membershipsSnap.forEach((doc) => {
@@ -143,7 +137,6 @@ exports.deletePortalUser = onCall(async (request) => {
     return { message: "User successfully deleted." };
   } catch (error) {
     console.error("Error deleting user:", error);
-    // If user is not found in Auth, continue to delete DB records anyway
     if (error.code === 'auth/user-not-found') {
        await db.collection("users").doc(userId).delete();
        return { message: "User cleaned up from database (Auth user was already gone)." };
@@ -152,7 +145,7 @@ exports.deletePortalUser = onCall(async (request) => {
   }
 });
 
-// --- EXPORT 3: Delete Company (Adding this proactively for you) ---
+// --- EXPORT 3: Delete Company ---
 exports.deleteCompany = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
   
@@ -165,22 +158,13 @@ exports.deleteCompany = onCall(async (request) => {
   const db = admin.firestore();
 
   try {
-    // 1. Delete Company Document
     await db.collection("companies").doc(companyId).delete();
-
-    // 2. Delete all memberships associated with this company
-    // Note: This does NOT delete the actual users, just their access to this company.
     const membershipsSnap = await db.collection("memberships").where("companyId", "==", companyId).get();
     const batch = db.batch();
     membershipsSnap.forEach((doc) => {
       batch.delete(doc.ref);
     });
     await batch.commit();
-
-    // Note: Deleting subcollections (applications) requires a recursive delete tool 
-    // or manual deletion. For simple MVP, we leave subcollections as "orphaned" 
-    // or rely on Firebase CLI `firebase firestore:delete` for full cleanup.
-
     return { message: "Company deleted." };
   } catch (error) {
     throw new HttpsError("internal", error.message);
@@ -228,9 +212,139 @@ exports.onLeadSubmitted = onDocumentCreated("leads/{leadId}", async (event) => {
   await processDriverData(event.data.data());
 });
 
-// --- EXPORT 8: Distribute Daily Leads (New - Stub for Future) ---
+// --- EXPORT 8: Send Automated Email ---
+exports.sendAutomatedEmail = onCall(async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
+    
+    const { companyId, recipientEmail, triggerType, placeholders } = request.data;
+    if (!companyId || !recipientEmail || !triggerType) throw new HttpsError("invalid-argument", "Missing required fields.");
+
+    const db = admin.firestore();
+    const companyDoc = await db.collection("companies").doc(companyId).get();
+    if (!companyDoc.exists) throw new HttpsError("not-found", "Company not found.");
+    
+    const companyData = companyDoc.data();
+    const settings = companyData.emailSettings || {};
+    const templates = settings.templates || {};
+
+    const template = templates[triggerType];
+    if (!template || !template.enabled || !template.subject || !template.body) {
+        return { success: false, reason: "No active template found." };
+    }
+
+    if (!settings.email || !settings.appPassword) {
+        throw new HttpsError("failed-precondition", "Company email settings missing.");
+    }
+
+    const transporter = nodemailer.createTransport({
+        service: 'gmail', 
+        auth: {
+            user: settings.email,
+            pass: settings.appPassword
+        }
+    });
+
+    let subject = template.subject;
+    let body = template.body;
+
+    if (placeholders) {
+        Object.keys(placeholders).forEach(key => {
+            const regex = new RegExp(`{${key}}`, 'gi');
+            subject = subject.replace(regex, placeholders[key]);
+            body = body.replace(regex, placeholders[key]);
+        });
+    }
+
+    try {
+        await transporter.sendMail({
+            from: `"${companyData.companyName || 'Recruiting'}" <${settings.email}>`,
+            to: recipientEmail,
+            subject: subject,
+            text: body, 
+        });
+        return { success: true, message: "Email sent successfully." };
+    } catch (error) {
+        console.error("Email Send Error:", error);
+        throw new HttpsError("internal", "Failed to send email: " + error.message);
+    }
+});
+
+// --- EXPORT 9: Distribute Daily Leads (FULL LOGIC) ---
 exports.distributeDailyLeads = onCall(async (request) => {
-    // This logic was referenced in your SuperAdminDashboard but not implemented yet.
-    // Returning a placeholder success for now so the button doesn't crash.
-    return { message: "Lead distribution logic is not yet implemented." };
+    // 1. Auth Check (Super Admin only)
+    if (!request.auth || request.auth.token.roles?.globalRole !== 'super_admin') {
+        throw new HttpsError("permission-denied", "Super Admin only.");
+    }
+
+    const db = admin.firestore();
+    
+    // 2. Fetch Companies
+    const companiesSnap = await db.collection("companies").get();
+    if (companiesSnap.empty) return { message: "No companies found." };
+
+    // 3. Fetch Recent Leads from Pool
+    // Limit to 200 for now to be safe, ordered by newest.
+    // In production, you might want more sophisticated "unread" logic.
+    const leadsSnap = await db.collection("leads")
+        .orderBy("createdAt", "desc")
+        .limit(200) 
+        .get();
+
+    if (leadsSnap.empty) return { message: "No leads found in pool." };
+
+    const BATCH_SIZE = 450; // Firestore limit is 500
+    let batch = db.batch();
+    let opCount = 0;
+    const distributionDetails = [];
+
+    // 4. Distribute
+    for (const companyDoc of companiesSnap.docs) {
+        const companyId = companyDoc.id;
+        const plan = companyDoc.data().planType || 'free';
+        const limit = plan === 'paid' ? 200 : 50;
+
+        let sentCount = 0;
+        
+        for (const leadDoc of leadsSnap.docs) {
+            if (sentCount >= limit) break;
+
+            const leadData = leadDoc.data();
+            
+            // Destination: companies/{companyId}/leads/{originalLeadId}
+            // Using same ID ensures deduplication (if run multiple times, it just overwrites)
+            const destRef = db.collection("companies").doc(companyId).collection("leads").doc(leadDoc.id);
+            
+            const distData = {
+                ...leadData,
+                isPlatformLead: true, // Tag as SafeHaul lead
+                distributedAt: admin.firestore.FieldValue.serverTimestamp(),
+                originalLeadId: leadDoc.id,
+                // We do NOT overwrite status here to preserve "Contacted" states if re-run
+            };
+
+            // Use set with merge to create or update without destroying existing local data
+            batch.set(destRef, distData, { merge: true });
+            
+            sentCount++;
+            opCount++;
+
+            // Commit and reset batch if full
+            if (opCount >= BATCH_SIZE) {
+                await batch.commit();
+                batch = db.batch();
+                opCount = 0;
+            }
+        }
+        distributionDetails.push(`${companyDoc.data().companyName}: ${sentCount} leads`);
+    }
+
+    // Commit remaining
+    if (opCount > 0) {
+        await batch.commit();
+    }
+
+    return { 
+        message: "Distribution Complete", 
+        details: distributionDetails 
+    };
 });
