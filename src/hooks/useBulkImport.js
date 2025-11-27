@@ -26,32 +26,62 @@ export function useBulkImport() {
         // Dynamic Key Finder
         const findKey = (row, keywords) => {
             const rowKeys = Object.keys(row);
-            return rowKeys.find(k => keywords.some(keyword => k.toLowerCase().includes(keyword)));
+            return rowKeys.find(k => keywords.some(keyword => k.toLowerCase().trim() === keyword));
         };
 
         const parsedRows = jsonData.map((row, index) => {
+            // 1. Identify Columns
             const firstKey = findKey(row, ['firstname', 'first name', 'fname', 'first', 'given']);
             const lastKey = findKey(row, ['lastname', 'last name', 'lname', 'last', 'surname']);
-            const emailKey = findKey(row, ['email', 'e-mail']);
-            const phoneKey = findKey(row, ['phone', 'mobile', 'cell']);
+            // Fallback for Full Name
+            const fullNameKey = findKey(row, ['fullname', 'full name', 'name', 'driver name', 'driver']);
+            
+            const emailKey = findKey(row, ['email', 'e-mail', 'mail']);
+            const phoneKey = findKey(row, ['phone', 'mobile', 'cell', 'contact']);
             const typeKey = findKey(row, ['type', 'role', 'position', 'driver type']);
             const expKey = findKey(row, ['experience', 'exp', 'years']);
             const cityKey = findKey(row, ['city', 'location']);
             const stateKey = findKey(row, ['state', 'province']);
 
+            // Helper to clean string values
             const safeVal = (val) => (val === undefined || val === null) ? '' : String(val).trim();
 
-            // Phone Normalization
+            // 2. Extract Names (Smart Split Logic)
+            let fName = firstKey ? safeVal(row[firstKey]) : '';
+            let lName = lastKey ? safeVal(row[lastKey]) : '';
+
+            // If First/Last are empty, try to split Full Name
+            if ((!fName || !lName) && fullNameKey) {
+                const fullName = safeVal(row[fullNameKey]);
+                if (fullName) {
+                    const parts = fullName.split(' ').filter(p => p !== ''); // Split by space, remove empty
+                    if (parts.length > 0) {
+                        fName = parts[0]; // First part is First Name
+                        if (parts.length > 1) {
+                            lName = parts.slice(1).join(' '); // Rest is Last Name (e.g. "Von Doom")
+                        } else {
+                            lName = 'Driver'; // Default if only one word provided
+                        }
+                    }
+                }
+            }
+
+            // Final Fallbacks
+            if (!fName) fName = 'Unknown';
+            if (!lName) lName = 'Driver';
+
+            // 3. Phone Normalization
             const rawPhone = phoneKey ? safeVal(row[phoneKey]) : '';
             const formattedPhone = formatPhoneNumber(rawPhone);
             const normPhone = normalizePhone(rawPhone);
 
+            // 4. Driver Type
             let typeVal = typeKey ? safeVal(row[typeKey]) : '';
             if (!typeVal || typeVal.toLowerCase() === 'undefined') typeVal = 'unidentified';
 
             const record = {
-                firstName: firstKey ? safeVal(row[firstKey]) : 'Unknown',
-                lastName: lastKey ? safeVal(row[lastKey]) : 'Driver',
+                firstName: fName,
+                lastName: lName,
                 email: emailKey ? safeVal(row[emailKey]) : '',
                 phone: formattedPhone,
                 normalizedPhone: normPhone,
@@ -62,13 +92,13 @@ export function useBulkImport() {
                 isEmailPlaceholder: false
             };
 
-            // Generate placeholder email if missing
+            // Generate placeholder email if missing (required for DB indexing/uniqueness logic later)
             if (!record.email) {
                 record.email = `no_email_${Date.now()}_${index}@placeholder.com`;
                 record.isEmailPlaceholder = true;
             }
 
-            // Valid row check (must have email placeholder OR phone)
+            // Valid row check: Must have either an Email (real or placeholder) OR a Phone number to be worth importing
             if (record.email || record.phone) return record;
             return null;
         }).filter(r => r !== null);
