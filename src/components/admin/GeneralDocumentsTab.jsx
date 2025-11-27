@@ -4,26 +4,22 @@ import { db, storage } from '../../firebase/config.js';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Loader2, Upload, Trash2, FileText, Download, AlertTriangle, Shield } from 'lucide-react';
-import { Section } from './ApplicationUI.jsx'; // Re-use the Section component
+import { Section } from './ApplicationUI.jsx'; 
 import { getFieldValue } from '../../utils/helpers.js';
 
-// --- NEW: List of application file keys to merge ---
 const APP_FILE_KEYS = [
   { key: 'cdl-front', label: 'CDL (Front)' },
   { key: 'cdl-back', label: 'CDL (Back)' },
   { key: 'twic-card-upload', label: 'TWIC Card' },
   { key: 'mvr-consent-upload', label: 'MVR Consent Form' },
   { key: 'drug-test-consent-upload', label: 'Drug Test Consent' },
-  // { key: 'ssc-upload', label: 'Social Security Card' },
-  // { key: 'med-card-upload', label: 'Medical Card' },
 ];
 
 export function GeneralDocumentsTab({ 
   companyId, 
   applicationId, 
-  isNestedApp, // This prop is no longer used but safe to leave for now
-  appData,    
-  fileUrls    // This prop is no longer used here, we use appData instead
+  appData,
+  collectionName = 'applications' // Default to 'applications'
 }) {
   const [generalDocs, setGeneralDocs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,11 +32,10 @@ export function GeneralDocumentsTab({
 
   // --- 1. Get the correct Firestore path ---
   const generalDocsCollectionRef = useMemo(() => {
-    let appRef;
-    // This logic is simplified as isNestedApp is always true
-    appRef = doc(db, "companies", companyId, "applications", applicationId);
+    // Dynamic path: companies/{id}/applications OR leads/{appId}/general_documents
+    const appRef = doc(db, "companies", companyId, collectionName, applicationId);
     return collection(appRef, "general_documents");
-  }, [companyId, applicationId]);
+  }, [companyId, applicationId, collectionName]);
 
   // --- 2. Function to fetch all general documents ---
   const fetchGeneralDocs = async () => {
@@ -52,7 +47,7 @@ export function GeneralDocumentsTab({
       const files = snapshot.docs.map(doc => ({ 
         id: doc.id, 
         ...doc.data(),
-        isReadonly: false, // Mark as deletable
+        isReadonly: false, 
         source: 'Uploaded'
       }));
       setGeneralDocs(files);
@@ -64,59 +59,49 @@ export function GeneralDocumentsTab({
     }
   };
 
-  // --- 3. Load files on component mount ---
   useEffect(() => {
     fetchGeneralDocs();
   }, [generalDocsCollectionRef]);
 
-  // --- 4. Create list of application files from the appData prop ---
+  // --- 3. Merge with Application Files (ReadOnly) ---
   const applicationFiles = useMemo(() => {
     if (!appData) return [];
     
     return APP_FILE_KEYS.map(fileKey => {
-      // Get the file data object directly from appData
-      // This object should contain { name, storagePath, url, status }
       const fileData = appData[fileKey.key];
-      
-      // If no file data, or if it has no URL, skip it
       if (!fileData || !fileData.url) return null; 
       
       return {
-        id: fileKey.key, // Use the key as a unique ID
+        id: fileKey.key, 
         description: fileKey.label,
         fileName: fileData.name,
-        url: fileData.url, // <-- Use the URL from the database
-        storagePath: fileData.storagePath, // <-- Use the path from the database
-        isReadonly: true, // Mark as read-only
+        url: fileData.url, 
+        storagePath: fileData.storagePath, 
+        isReadonly: true, 
         source: 'Application'
       };
-    }).filter(file => file !== null); // Filter out any null entries
-    
+    }).filter(file => file !== null); 
   }, [appData]); 
 
-  // --- 5. Combine both lists and sort by date ---
+  // --- 4. Combine lists ---
   const combinedDocs = useMemo(() => {
-    // Add a 'createdAt' to app files for sorting (using 0 so they appear older)
     const formattedAppFiles = applicationFiles.map(file => ({
       ...file,
-      createdAt: { seconds: 0 } // Put application files at the end
+      createdAt: { seconds: 0 } // Oldest
     }));
     
     const allFiles = [...generalDocs, ...formattedAppFiles];
     
-    // Sort by createdAt date, newest first
     allFiles.sort((a, b) => {
       const aDate = a.createdAt?.seconds || 0;
       const bDate = b.createdAt?.seconds || 0;
-      return bDate - aDate;
+      return bDate - aDate; // Newest first
     });
     
     return allFiles;
-    
   }, [applicationFiles, generalDocs]);
 
-
-  // --- 6. Handle File Upload ---
+  // --- 5. Handle File Upload ---
   const handleUpload = async () => {
     if (!fileToUpload) {
       setError("Please select a file to upload.");
@@ -128,7 +113,8 @@ export function GeneralDocumentsTab({
     setError('');
 
     try {
-      // --- UPDATED STORAGE PATH: Includes companyId now ---
+      // Note: We keep 'applications' in the storage path to match Security Rules
+      // Structure: companies/{companyId}/applications/{applicationId}/general_documents/...
       const storagePath = `companies/${companyId}/applications/${applicationId}/general_documents/${Date.now()}_${fileToUpload.name}`;
       const storageRef = ref(storage, storagePath);
 
@@ -150,7 +136,7 @@ export function GeneralDocumentsTab({
       setFileDescription('');
       document.getElementById('general-file-input').value = null;
       
-      await fetchGeneralDocs(); // Refresh the list
+      await fetchGeneralDocs(); 
       setTimeout(() => setUploadMessage(''), 2000);
 
     } catch (err) {
@@ -161,9 +147,8 @@ export function GeneralDocumentsTab({
     }
   };
 
-  // --- 7. Handle File Delete ---
+  // --- 6. Handle File Delete ---
   const handleDelete = async (file) => {
-    // This will automatically not run on App files due to button being hidden
     if (!window.confirm(`Are you sure you want to delete "${file.fileName}"?`)) {
       return;
     }
@@ -240,7 +225,6 @@ export function GeneralDocumentsTab({
         </div>
       </Section>
       
-      {/* --- Render the combined list --- */}
       <Section title="All Documents">
         <div className="space-y-3">
           {loading && (
@@ -267,7 +251,6 @@ export function GeneralDocumentsTab({
                 </div>
               </div>
               <div className="flex gap-2 shrink-0 items-center">
-                {/* Source Badge */}
                 <span 
                   className={`px-2 py-0.5 text-xs font-semibold rounded-full
                     ${file.isReadonly 
@@ -287,7 +270,6 @@ export function GeneralDocumentsTab({
                 >
                   <Download size={18} />
                 </a>
-                {/* Conditional Delete Button */}
                 {!file.isReadonly && (
                   <button
                     className="p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all"

@@ -1,14 +1,14 @@
 // src/components/admin/ApplicationsView.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { getFieldValue, getStatusColor } from '../../utils/helpers.js';
-import { FileText, Search, ArrowDownUp, Filter, Zap } from 'lucide-react';
+import { FileText, Search, ArrowDownUp, Filter, Zap, ChevronLeft, ChevronRight, Building2, Loader2 } from 'lucide-react';
 
 // --- Reusable Card Component ---
 function Card({ title, icon, children, className = '' }) {
   return (
-    <div className={`bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden ${className}`}>
-      <div className="p-5 border-b border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-700 flex items-center gap-3">
+    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col ${className}`}>
+      <div className="p-5 border-b border-gray-200 shrink-0">
+        <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
           {icon}
           {title}
         </h2>
@@ -62,10 +62,15 @@ export function ApplicationsView({
   const [sortConfig, setSortConfig] = useState({ key: 'submittedAt', direction: 'desc' });
   const [filterSource, setFilterSource] = useState('All'); // 'All', 'Company App', 'Added by Safehaul'
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+
+  // Data Processing
   const filteredApplications = useMemo(() => {
     const searchTerm = appSearch.toLowerCase();
     
-    // Map applications
+    // Map applications to include company name
     const appsWithData = allApplications.map(app => ({
       ...app,
       companyName: allCompaniesMap.get(app.companyId) || (app.companyId === 'general-leads' ? 'General Pool' : 'Unknown')
@@ -95,6 +100,18 @@ export function ApplicationsView({
     return sortApplications(filtered, sortConfig);
     
   }, [appSearch, allApplications, allCompaniesMap, sortConfig, filterSource]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredApplications.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+      const start = (currentPage - 1) * itemsPerPage;
+      return filteredApplications.slice(start, start + itemsPerPage);
+  }, [filteredApplications, currentPage, itemsPerPage]);
+
+  // Reset to page 1 on filter change
+  useEffect(() => {
+      setCurrentPage(1);
+  }, [appSearch, filterSource, itemsPerPage]);
   
   const handleSortChange = (e) => {
     const [key, direction] = e.target.value.split(',');
@@ -102,95 +119,176 @@ export function ApplicationsView({
   };
 
   return (
-    <Card title="Driver Applications" icon={<FileText size={22} />} className="w-full">
-      {/* --- Filters Row --- */}
-      <div className="bg-gray-50 px-5 py-3 border-b border-gray-200 flex gap-2">
-          <button 
-            onClick={() => setFilterSource('All')} 
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filterSource === 'All' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
-          >
-            All Drivers
-          </button>
-          <button 
-            onClick={() => setFilterSource('Company App')} 
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filterSource === 'Company App' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
-          >
-            Direct Applications
-          </button>
-          <button 
-            onClick={() => setFilterSource('Added by Safehaul')} 
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${filterSource === 'Added by Safehaul' ? 'bg-purple-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
-          >
-            <Zap size={12} /> Added by Safehaul
-          </button>
-      </div>
+    <Card title="Driver Applications Master List" icon={<FileText size={20} className="text-blue-600"/>} className="h-full">
+      
+      {/* --- Controls Header --- */}
+      <div className="bg-white p-4 border-b border-gray-200 flex flex-col gap-4">
+          
+          {/* Tabs */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <button 
+                onClick={() => setFilterSource('All')} 
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${filterSource === 'All' ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+                All Drivers
+            </button>
+            <button 
+                onClick={() => setFilterSource('Company App')} 
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${filterSource === 'Company App' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+                <Building2 size={14}/> Direct Apps
+            </button>
+            <button 
+                onClick={() => setFilterSource('Added by Safehaul')} 
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${filterSource === 'Added by Safehaul' ? 'bg-purple-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+                <Zap size={14} /> SafeHaul Leads
+            </button>
+          </div>
 
-      <div className="p-5 border-b border-gray-200 flex flex-col sm:flex-row gap-4 justify-between">
-        <div className="relative w-full sm:max-w-md">
-          <input
-            type="text"
-            placeholder="Search by driver name, email, or company name..."
-            className="w-full p-3 pl-10 border border-gray-300 rounded-lg"
-            value={appSearch}
-            onChange={(e) => setAppSearch(e.target.value)}
-          />
-          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        </div>
-        
-        <div className="relative w-full sm:w-auto">
-          <select
-            id="sort-select-super"
-            className="w-full sm:w-auto px-4 py-3 pl-10 border border-gray-300 rounded-lg shadow-sm text-gray-700 font-semibold bg-white appearance-none"
-            onChange={handleSortChange}
-            value={`${sortConfig.key},${sortConfig.direction}`}
-          >
-            <option value="submittedAt,desc">Newest First</option>
-            <option value="submittedAt,asc">Oldest First</option>
-            <option value="name,asc">Driver Name (A-Z)</option>
-            <option value="name,desc">Driver Name (Z-A)</option>
-            <option value="company,asc">Company Name (A-Z)</option>
-            <option value="company,desc">Company Name (Z-A)</option>
-          </select>
-          <ArrowDownUp size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        </div>
+          {/* Search & Sort Row */}
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="relative w-full sm:max-w-md">
+                <input
+                    type="text"
+                    placeholder="Search driver, email, or company..."
+                    className="w-full p-2.5 pl-10 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    value={appSearch}
+                    onChange={(e) => setAppSearch(e.target.value)}
+                />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              </div>
+              
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <div className="relative w-full sm:w-auto">
+                    <select
+                        className="w-full sm:w-48 pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg text-sm font-medium bg-white focus:ring-2 focus:ring-blue-500 appearance-none"
+                        onChange={handleSortChange}
+                        value={`${sortConfig.key},${sortConfig.direction}`}
+                    >
+                        <option value="submittedAt,desc">Newest First</option>
+                        <option value="submittedAt,asc">Oldest First</option>
+                        <option value="name,asc">Name (A-Z)</option>
+                        <option value="name,desc">Name (Z-A)</option>
+                        <option value="company,asc">Company (A-Z)</option>
+                    </select>
+                    <ArrowDownUp size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  </div>
+              </div>
+          </div>
       </div>
       
-      <div id="application-list" className="p-5 space-y-4">
-        {listLoading ? <p>Loading applications...</p> : (
-          statsError.apps ? <p className="text-red-600">Error: Could not load applications. Check permissions.</p> :
-          filteredApplications.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">
-              {appSearch ? 'No applications found matching your search.' : 'No applications found.'}
-            </p>
-          ) :
-          filteredApplications.map(app => (
-            <button 
-              key={app.id} 
-              className="w-full p-4 border border-gray-200 rounded-lg bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between text-left hover:border-blue-500 hover:shadow-md transition-all"
-              onClick={() => onAppClick(app)}
-            >
-              <div>
-                <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-lg text-gray-900">{`${getFieldValue(app['firstName'])} ${getFieldValue(app['lastName'])}`}</h3>
-                    {app.sourceType === 'Added by Safehaul' && <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded border border-purple-200">SAFEHAUL</span>}
-                </div>
-                <p className="text-sm text-gray-600">{getFieldValue(app.email)}</p>
-                <p className="text-sm text-gray-500 mt-1">
-                  From: <span className="font-medium text-gray-700">{app.companyName}</span>
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span className={`mt-2 sm:mt-0 px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(app.status || 'New Application')}`}>
-                    {app.status || 'New Application'}
-                </span>
-                <span className="text-xs text-gray-400">
-                     {app.createdAt ? new Date(app.createdAt.seconds * 1000).toLocaleDateString() : 'Recent'}
-                </span>
-              </div>
-            </button>
-          ))
-        )}
+      {/* --- Table Area --- */}
+      <div className="flex-1 overflow-auto min-h-0 bg-gray-50">
+        <table className="w-full text-left border-collapse">
+            <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                <tr>
+                    <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Driver</th>
+                    <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Company / Source</th>
+                    <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Status</th>
+                    <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 text-right">Date</th>
+                </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+                {listLoading ? (
+                    <tr><td colSpan="4" className="p-10 text-center text-gray-500"><Loader2 className="animate-spin mx-auto mb-2"/>Loading applications...</td></tr>
+                ) : statsError.apps ? (
+                    <tr><td colSpan="4" className="p-10 text-center text-red-500">Error loading data.</td></tr>
+                ) : filteredApplications.length === 0 ? (
+                    <tr><td colSpan="4" className="p-10 text-center text-gray-400">No applications found matching your criteria.</td></tr>
+                ) : (
+                    paginatedData.map(app => {
+                         const name = `${getFieldValue(app['firstName'])} ${getFieldValue(app['lastName'])}`;
+                         const isSafeHaul = app.sourceType === 'Added by Safehaul';
+
+                         return (
+                            <tr 
+                                key={app.id} 
+                                onClick={() => onAppClick(app)}
+                                className="hover:bg-gray-50 cursor-pointer transition-colors group"
+                            >
+                                <td className="px-6 py-4 align-middle">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 group-hover:bg-blue-100 group-hover:border-blue-200 transition-colors">
+                                            {name.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-gray-900">{name}</p>
+                                            <p className="text-xs text-gray-500">{getFieldValue(app.email)}</p>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 align-middle">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-medium text-gray-800">{app.companyName}</span>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            {isSafeHaul ? (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase tracking-wide">
+                                                    <Zap size={10} fill="currentColor" /> SafeHaul
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200 uppercase tracking-wide">
+                                                    <Building2 size={10} /> Direct
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 align-middle">
+                                    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${getStatusColor(app.status || 'New Application').replace('bg-', 'bg-opacity-90 bg-').replace('text-', 'border-')}`}>
+                                        {app.status || 'New Application'}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 align-middle text-right text-sm text-gray-500 font-mono">
+                                     {app.createdAt ? new Date(app.createdAt.seconds * 1000).toLocaleDateString() : '--'}
+                                </td>
+                            </tr>
+                         );
+                    })
+                )}
+            </tbody>
+        </table>
       </div>
+
+      {/* --- Pagination Footer --- */}
+      <div className="border-t border-gray-200 p-4 bg-gray-50 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span>Show</span>
+                <select 
+                    value={itemsPerPage} 
+                    onChange={(e) => setItemsPerPage(Number(e.target.value))} 
+                    className="border-gray-300 rounded-md text-xs py-1.5 pl-2 pr-6 bg-white focus:ring-blue-500 focus:border-blue-500"
+                >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                </select>
+                <span>per page</span>
+            </div>
+
+            <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">
+                    Page <strong>{currentPage}</strong> of <strong>{totalPages || 1}</strong>
+                </span>
+                <div className="flex gap-1">
+                    <button 
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                        disabled={currentPage === 1}
+                        className="p-2 rounded-md bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-white transition-all"
+                    >
+                        <ChevronLeft size={16} className="text-gray-600"/>
+                    </button>
+                    <button 
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                        disabled={currentPage >= totalPages}
+                        className="p-2 rounded-md bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-white transition-all"
+                    >
+                        <ChevronRight size={16} className="text-gray-600"/>
+                    </button>
+                </div>
+            </div>
+      </div>
+
     </Card>
   );
 }

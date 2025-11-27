@@ -5,7 +5,7 @@ import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
 import { Eye, EyeOff, Building2, ArrowRight, Mail, Lock, ChevronLeft } from 'lucide-react';
 
 export function LoginScreen() {
-  const [view, setView] = useState('login'); // 'login' or 'forgot'
+  const [view, setView] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -22,17 +22,19 @@ export function LoginScreen() {
     try {
       if (view === 'login') {
         await handleLogin(email, password);
-        // App.jsx handles the redirect upon auth state change
+        // SUCCESS: Force a reload to ensure Firebase Auth state syncs immediately
+        window.location.reload(); 
       } else {
         // Forgot Password Logic
         const auth = getAuth();
         await sendPasswordResetEmail(auth, email);
         setSuccessMsg(`Password reset link sent to ${email}. Check your inbox.`);
+        setLoading(false);
         setTimeout(() => setView('login'), 3000);
       }
     } catch (err) {
+      console.error("Login Error:", err);
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };

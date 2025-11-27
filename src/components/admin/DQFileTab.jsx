@@ -4,10 +4,8 @@ import { db, storage } from '../../firebase/config.js';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Loader2, Upload, Trash2, FileText, Download, AlertTriangle } from 'lucide-react';
-import { Section } from './ApplicationUI.jsx'; // Re-use the Section component
-import { getFieldValue } from '../../utils/helpers.js';
+import { Section } from './ApplicationUI.jsx'; 
 
-// Define the standard DQ file types
 const DQ_FILE_TYPES = [
   "Application for Employment",
   "Previous Employer Inquiry (3yr)",
@@ -22,7 +20,7 @@ const DQ_FILE_TYPES = [
   "Other"
 ];
 
-export function DQFileTab({ companyId, applicationId }) {
+export function DQFileTab({ companyId, applicationId, collectionName = 'applications' }) {
   
   const [dqFiles, setDqFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,15 +31,14 @@ export function DQFileTab({ companyId, applicationId }) {
   const [fileToUpload, setFileToUpload] = useState(null);
   const [selectedFileType, setSelectedFileType] = useState(DQ_FILE_TYPES[0]);
 
-  // --- 1. Get the correct Firestore path (simplified) ---
-  // This helper memo ensures we always have the right collection reference
+  // --- 1. Get the correct Firestore path ---
   const dqFilesCollectionRef = useMemo(() => {
-    // Path is always nested now
-    const appRef = doc(db, "companies", companyId, "applications", applicationId);
+    // Dynamic path: companies/{id}/applications OR leads/{appId}/dq_files
+    const appRef = doc(db, "companies", companyId, collectionName, applicationId);
     return collection(appRef, "dq_files");
-  }, [companyId, applicationId]);
+  }, [companyId, applicationId, collectionName]);
 
-  // --- 2. Function to fetch all DQ files ---
+  // --- 2. Fetch DQ files ---
   const fetchDqFiles = async () => {
     setLoading(true);
     setError('');
@@ -58,12 +55,11 @@ export function DQFileTab({ companyId, applicationId }) {
     }
   };
 
-  // --- 3. Load files on component mount ---
   useEffect(() => {
     fetchDqFiles();
-  }, [dqFilesCollectionRef]); // Re-run if the ref changes
+  }, [dqFilesCollectionRef]);
 
-  // --- 4. Handle File Upload ---
+  // --- 3. Handle File Upload ---
   const handleUpload = async () => {
     if (!fileToUpload || !selectedFileType) {
       setError("Please select a file and a file type.");
@@ -75,7 +71,8 @@ export function DQFileTab({ companyId, applicationId }) {
     setError('');
 
     try {
-      // --- UPDATED STORAGE PATH: Includes companyId now ---
+      // NOTE: We use 'applications' in the storage path even for leads to satisfy existing Storage Rules
+      // Storage Structure: companies/{companyId}/applications/{applicationId}/dq_files/...
       const storagePath = `companies/${companyId}/applications/${applicationId}/dq_files/${selectedFileType.replace(/[^a-zA-Z0-9]/g, '_')}_${fileToUpload.name}`;
       const storageRef = ref(storage, storagePath);
 
@@ -97,9 +94,9 @@ export function DQFileTab({ companyId, applicationId }) {
       setUploadMessage('Upload Complete!');
       setFileToUpload(null);
       setSelectedFileType(DQ_FILE_TYPES[0]);
-      document.getElementById('dq-file-input').value = null; // Clear file input
+      document.getElementById('dq-file-input').value = null; 
       
-      await fetchDqFiles(); // Refresh the list
+      await fetchDqFiles(); 
       setTimeout(() => setUploadMessage(''), 2000);
 
     } catch (err) {
@@ -110,13 +107,13 @@ export function DQFileTab({ companyId, applicationId }) {
     }
   };
 
-  // --- 5. Handle File Delete ---
+  // --- 4. Handle File Delete ---
   const handleDelete = async (file) => {
     if (!window.confirm(`Are you sure you want to delete "${file.fileName}"?`)) {
       return;
     }
     
-    setLoading(true); // Use main loader for simplicity
+    setLoading(true); 
     setError('');
 
     try {
@@ -128,7 +125,7 @@ export function DQFileTab({ companyId, applicationId }) {
       const docRef = doc(dqFilesCollectionRef, file.id);
       await deleteDoc(docRef);
       
-      await fetchDqFiles(); // Refresh list (will set loading to false)
+      await fetchDqFiles();
 
     } catch (err) {
       console.error("Delete failed:", err);
@@ -141,7 +138,6 @@ export function DQFileTab({ companyId, applicationId }) {
     <div className="space-y-6">
       <Section title="Add New DQ File">
         <div className="space-y-4">
-          {/* File Type Dropdown */}
           <div>
             <label htmlFor="dq-file-type" className="block text-sm font-medium text-gray-700 mb-1">
               File Type
@@ -159,7 +155,6 @@ export function DQFileTab({ companyId, applicationId }) {
             </select>
           </div>
           
-          {/* File Input */}
           <div>
             <label htmlFor="dq-file-input" className="block text-sm font-medium text-gray-700 mb-1">
               File
@@ -178,7 +173,6 @@ export function DQFileTab({ companyId, applicationId }) {
             />
           </div>
           
-          {/* Upload Button & Status */}
           <div className="flex items-center gap-4">
             <button 
               className="w-full sm:w-auto py-2 px-6 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition duration-150 disabled:opacity-75"

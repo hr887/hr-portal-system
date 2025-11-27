@@ -1,24 +1,30 @@
 // src/components/admin/NotesTab.jsx
 import React, { useState, useEffect } from 'react';
-import { getApplicationNotes, addApplicationNote } from '../../firebase/firestore';
-import { getPortalUser } from '../../firebase/firestore'; // To get current user name
-import { auth } from '../../firebase/config';
-import { Send, MessageSquare, Clock, Loader2, User } from 'lucide-react';
+import { db, auth } from '../../firebase/config';
+import { collection, query, orderBy, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getPortalUser } from '../../firebase/firestore'; 
+import { Send, MessageSquare, Clock, Loader2 } from 'lucide-react';
 
-export function NotesTab({ companyId, applicationId }) {
+export function NotesTab({ companyId, applicationId, collectionName = 'applications' }) {
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
-  // Load Notes and Current User Name
   useEffect(() => {
     async function init() {
         setLoading(true);
         try {
-            // 1. Fetch Notes
-            const fetchedNotes = await getApplicationNotes(companyId, applicationId);
+            // 1. Fetch Notes from correct collection
+            const notesRef = collection(db, "companies", companyId, collectionName, applicationId, "internal_notes");
+            const q = query(notesRef, orderBy("createdAt", "desc"));
+            const snapshot = await getDocs(q);
+            
+            const fetchedNotes = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
             setNotes(fetchedNotes);
 
             // 2. Get Author Name
@@ -33,7 +39,7 @@ export function NotesTab({ companyId, applicationId }) {
         }
     }
     init();
-  }, [companyId, applicationId]);
+  }, [companyId, applicationId, collectionName]);
 
   const handleSend = async (e) => {
       e.preventDefault();
@@ -41,14 +47,20 @@ export function NotesTab({ companyId, applicationId }) {
 
       setSending(true);
       try {
-          await addApplicationNote(companyId, applicationId, newNote, currentUser);
+          const notesRef = collection(db, "companies", companyId, collectionName, applicationId, "internal_notes");
+          await addDoc(notesRef, {
+              text: newNote,
+              author: currentUser,
+              createdAt: serverTimestamp(),
+              type: 'note'
+          });
           
-          // Optimistic update (add to list immediately)
+          // Optimistic update
           const optimisticNote = {
               id: Date.now().toString(),
               text: newNote,
               author: currentUser,
-              createdAt: { seconds: Date.now() / 1000 }, // Mock timestamp
+              createdAt: { seconds: Date.now() / 1000 }, 
               type: 'note'
           };
           setNotes([optimisticNote, ...notes]);
@@ -63,7 +75,6 @@ export function NotesTab({ companyId, applicationId }) {
 
   return (
     <div className="space-y-6">
-        {/* Input Area */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Internal Note (Private)</label>
             <form onSubmit={handleSend}>
@@ -90,7 +101,6 @@ export function NotesTab({ companyId, applicationId }) {
             </form>
         </div>
 
-        {/* Notes List */}
         <div className="space-y-4">
             {loading ? (
                 <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-gray-400"/></div>

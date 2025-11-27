@@ -1,19 +1,20 @@
-// [HR PORTAL] src/App.jsx
+// src/App.jsx
 import React, { useState, useEffect, useContext, createContext } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { doc, getDoc } from "firebase/firestore";
-import { onAuthStateChanged, getIdTokenResult, signOut } from "firebase/auth";
-import { auth, db } from './firebase/config'; 
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { onAuthStateChanged, getIdTokenResult } from "firebase/auth";
+import { auth, db } from './firebase/config';
+import { doc, getDoc } from 'firebase/firestore';
+import { Loader2 } from 'lucide-react';
 
-// --- ADMIN COMPONENTS ---
-import { LoginScreen } from './components/LoginScreen';
-import { SuperAdminDashboard } from './components/SuperAdminDashboard';
-import { CompanyAdminDashboard } from './components/CompanyAdminDashboard';
-import { CompanyChooserModal } from './components/CompanyChooserModal';
-import { CompanySettings } from './components/admin/CompanySettings'; 
-import GlobalLoadingState from './components/feedback/GlobalLoadingState'; 
+// --- COMPONENTS ---
+import { LoginScreen } from './components/LoginScreen.jsx';
+import { TeamMemberSignup } from './components/public/TeamMemberSignup.jsx';
+import { SuperAdminDashboard } from './components/SuperAdminDashboard.jsx';
+import { CompanyAdminDashboard } from './components/CompanyAdminDashboard.jsx';
+import { CompanySettings } from './components/admin/CompanySettings.jsx'; // <--- Added Import
+import { CompanyChooserModal } from './components/CompanyChooserModal.jsx';
 
-// --- CONTEXT ---
+// --- GLOBAL CONTEXT ---
 const DataContext = createContext();
 export const useData = () => useContext(DataContext);
 
@@ -25,54 +26,31 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [showCompanyChooser, setShowCompanyChooser] = useState(false);
 
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  // -- Auth Listener --
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
         try {
-          // Force refresh token to get latest claims
-          const idTokenResult = await getIdTokenResult(user, true);
+          const idTokenResult = await user.getIdTokenResult(true);
           const claims = idTokenResult.claims;
           setCurrentUserClaims(claims);
           
-          // --- REDIRECT LOGIC ---
-          const isSuperAdmin = claims.roles?.globalRole === 'super_admin';
-
-          if (location.pathname === '/login' || location.pathname === '/') {
-             if (isSuperAdmin) {
-                navigate('/super-admin');
-             } else {
-                // Regular admin or user - check if they have a company selected
-                if (currentCompanyProfile) {
-                    navigate('/company/dashboard');
-                } else {
-                    // They need to pick a company first
-                    // We stay on a "neutral" page or just show the modal over the dashboard
-                    setShowCompanyChooser(true);
-                    navigate('/company/dashboard'); 
-                }
-             }
+          if (claims.roles?.globalRole !== 'super_admin' && !currentCompanyProfile) {
+              setShowCompanyChooser(true);
           }
         } catch (e) {
           console.error("Error getting claims:", e);
         }
       } else {
-        // Not logged in
         setCurrentUser(null);
         setCurrentUserClaims(null);
         setCurrentCompanyProfile(null);
-        if (location.pathname !== '/login') {
-            navigate('/login');
-        }
+        setShowCompanyChooser(false);
       }
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [auth]); // Depend only on auth state changes
+  }, []);
 
   const loginToCompany = async (companyId, role) => {
     setLoading(true);
@@ -82,7 +60,6 @@ function AppContent() {
         const companyData = { id: companyDoc.id, ...companyDoc.data() };
         setCurrentCompanyProfile(companyData);
         setShowCompanyChooser(false);
-        navigate('/company/dashboard');
       }
     } catch (error) {
       console.error("Error logging into company:", error);
@@ -93,63 +70,111 @@ function AppContent() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
-    setCurrentCompanyProfile(null);
-    setCurrentUserClaims(null);
-    navigate('/login');
+    await auth.signOut();
+    window.location.href = '/login';
   };
 
   const returnToCompanyChooser = () => {
     setCurrentCompanyProfile(null);
-    navigate('/company/dashboard'); 
     setShowCompanyChooser(true);
   };
 
-  const adminContextValue = {
+  if (loading) {
+    return (
+        <div className="h-screen flex items-center justify-center bg-gray-50">
+            <Loader2 className="animate-spin text-blue-600" size={48} />
+        </div>
+    );
+  }
+
+  const contextValue = {
     currentUser,
     currentUserClaims,
     currentCompanyProfile,
+    setCurrentCompanyProfile,
     loginToCompany,
     handleLogout,
-    returnToCompanyChooser
+    returnToCompanyChooser,
+    setShowCompanyChooser,
+    setLoading
   };
 
-  if (loading) return <GlobalLoadingState />;
-
   return (
-    <DataContext.Provider value={adminContextValue}>
+    <DataContext.Provider value={contextValue}>
       <Routes>
-        <Route path="/login" element={<LoginScreen />} />
-        <Route path="/super-admin" element={<SuperAdminDashboard />} />
-        
-        {/* Company Dashboard Routes */}
-        <Route path="/company/dashboard" element={
-           // If no company selected, we render an empty div but the Modal will be on top
-           <CompanyAdminDashboard /> 
-        } />
-        
-        <Route path="/company/settings" element={
-           currentCompanyProfile ? <CompanySettings /> : <Navigate to="/company/dashboard" />
+        {/* --- PUBLIC ROUTES --- */}
+        <Route path="/login" element={!currentUser ? <LoginScreen /> : <RootRedirect />} />
+        <Route path="/join/:companyId" element={<TeamMemberSignup />} />
+
+        {/* --- PROTECTED ROUTES --- */}
+        <Route path="/super-admin" element={
+          <ProtectedRoute requiredRole="super_admin">
+            <SuperAdminDashboard />
+          </ProtectedRoute>
         } />
 
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="/company/dashboard" element={
+           <ProtectedRoute>
+             {currentCompanyProfile ? (
+               <CompanyAdminDashboard />
+             ) : (
+               <div className="min-h-screen bg-gray-50"></div>
+             )}
+           </ProtectedRoute>
+        } />
+
+        {/* FIX: This route now renders CompanySettings correctly */}
+        <Route path="/company/settings" element={
+           <ProtectedRoute>
+              {currentCompanyProfile ? <CompanySettings /> : <Navigate to="/company/dashboard" />}
+           </ProtectedRoute>
+        } />
+
+        {/* Default Redirect */}
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
-      
-      {/* Show Modal if logged in, not super admin, and no company selected */}
-      {currentUser && !currentCompanyProfile && currentUserClaims?.roles && !currentUserClaims.roles.globalRole && (
-        <CompanyChooserModal />
+
+      {/* Global Company Chooser Modal */}
+      {currentUser && showCompanyChooser && !loading && (
+         <CompanyChooserModal />
       )}
     </DataContext.Provider>
   );
 }
 
-// --- MAIN APP COMPONENT ---
-function App() {
-  return (
-    <BrowserRouter>
-      <AppContent />
-    </BrowserRouter>
-  );
+// --- HELPER COMPONENTS ---
+
+function RootRedirect() {
+  const { currentUser, currentUserClaims } = useData();
+  
+  if (!currentUser) return <Navigate to="/login" />;
+  
+  if (currentUserClaims?.roles?.globalRole === 'super_admin') {
+      return <Navigate to="/super-admin" />;
+  }
+  
+  return <Navigate to="/company/dashboard" />;
 }
 
-export default App;
+function ProtectedRoute({ children, requiredRole }) {
+  const { currentUser, currentUserClaims } = useData();
+
+  if (!currentUser) return <Navigate to="/login" />;
+
+  if (requiredRole === 'super_admin') {
+      if (currentUserClaims?.roles?.globalRole !== 'super_admin') {
+          return <Navigate to="/company/dashboard" />;
+      }
+  }
+
+  return children;
+}
+
+export default function App() {
+  return (
+    <Router>
+      <AppContent />
+    </Router>
+  );
+}

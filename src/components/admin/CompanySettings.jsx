@@ -6,9 +6,11 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, auth, storage } from '../../firebase/config.js'; 
 import { 
-  Building, User, Facebook, CreditCard, Save, Loader2, 
-  CheckCircle, FileSignature, Blocks, ShieldCheck, Upload, Plus, ArrowLeft, DollarSign, Clock, Briefcase
+  Building, User, CreditCard, Save, Loader2, 
+  CheckCircle, FileSignature, Blocks, Upload, ArrowLeft, 
+  DollarSign, Clock, UserPlus // <-- Added UserPlus
 } from 'lucide-react';
+import { ManageTeamModal } from '../ManageTeamModal.jsx'; // <-- Import the Modal
 
 // --- CONFIG: Standard Options ---
 const HOME_TIME_OPTIONS = ["Daily", "Weekends", "Weekly", "Bi-Weekly", "Monthly", "OTR"];
@@ -104,15 +106,20 @@ const StructuredOfferForm = ({ id, label, checked, offerData, onCheckChange, onD
 };
 
 export function CompanySettings() {
-  const { currentCompanyProfile, currentUser } = useData();
+  const { currentCompanyProfile, currentUser, currentUserClaims } = useData();
   const [activeTab, setActiveTab] = useState('company'); 
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [showManageTeam, setShowManageTeam] = useState(false); // <-- State for Modal
   const navigate = useNavigate(); 
 
   const [compData, setCompData] = useState({});
   const [personalData, setPersonalData] = useState({ name: '' });
   const [logoUploading, setLogoUploading] = useState(false);
+
+  // Check Permissions
+  const isCompanyAdmin = currentUserClaims?.roles?.[currentCompanyProfile?.id] === 'company_admin' 
+                         || currentUserClaims?.roles?.globalRole === 'super_admin';
 
   useEffect(() => {
     if (currentCompanyProfile) {
@@ -128,7 +135,7 @@ export function CompanySettings() {
         dotNumber: currentCompanyProfile.legal?.dotNumber || '',
         companyLogoUrl: currentCompanyProfile.companyLogoUrl || '',
         hiringPreferences: currentCompanyProfile.hiringPreferences || {},
-        structuredOffers: currentCompanyProfile.structuredOffers || {} // Using structuredOffers now
+        structuredOffers: currentCompanyProfile.structuredOffers || {} 
       });
     }
     if (currentUser) {
@@ -153,7 +160,7 @@ export function CompanySettings() {
         address: { street: compData.street, city: compData.city, state: compData.state, zip: compData.zip },
         legal: { mcNumber: compData.mcNumber, dotNumber: compData.dotNumber },
         hiringPreferences: compData.hiringPreferences,
-        structuredOffers: compData.structuredOffers // Save structured data
+        structuredOffers: compData.structuredOffers 
       });
       setSuccessMsg('Company settings saved.');
       setTimeout(() => setSuccessMsg(''), 3000);
@@ -211,10 +218,29 @@ export function CompanySettings() {
     if (activeTab === 'company') {
         return (
           <div className="space-y-8 max-w-4xl animate-in fade-in duration-300">
-            <div className="border-b border-gray-200 pb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Company Profile</h2>
-              <p className="text-gray-500 mt-1">Manage your official details.</p>
+            <div className="border-b border-gray-200 pb-6 flex justify-between items-end">
+              <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Company Profile</h2>
+                  <p className="text-gray-500 mt-1">Manage your official details.</p>
+              </div>
             </div>
+            
+            {/* --- NEW: MANAGE TEAM SECTION --- */}
+            {isCompanyAdmin && (
+                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm flex justify-between items-center">
+                    <div>
+                        <h3 className="text-lg font-bold text-gray-900">Team Management</h3>
+                        <p className="text-sm text-gray-500">Invite recruiters and set daily performance goals.</p>
+                    </div>
+                    <button 
+                        onClick={() => setShowManageTeam(true)}
+                        className="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 flex items-center gap-2 shadow-md transition-all"
+                    >
+                        <UserPlus size={18} /> Manage Team
+                    </button>
+                </div>
+            )}
+            {/* --------------------------------- */}
 
             <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-6 flex items-center gap-6">
                 <div className="w-20 h-20 bg-white rounded-lg shadow-sm flex items-center justify-center border border-gray-200 overflow-hidden shrink-0">
@@ -234,7 +260,7 @@ export function CompanySettings() {
               <div><label className="block text-sm font-semibold text-gray-700 mb-2">MC Number</label><input type="text" value={compData.mcNumber} onChange={(e) => setCompData({...compData, mcNumber: e.target.value})} className="w-full p-3 border border-gray-300 rounded-lg" /></div>
             </div>
 
-            {/* --- UPDATED: STRUCTURED JOB OFFERS --- */}
+            {/* --- STRUCTURED JOB OFFERS --- */}
             <div className="mt-8 border-t border-gray-200 pt-8">
                 <h3 className="text-lg font-bold text-gray-900 mb-2">Hiring Positions & Offers</h3>
                 <p className="text-sm text-gray-500 mb-6">Standardize your offers to help drivers find you.</p>
@@ -296,7 +322,6 @@ export function CompanySettings() {
         );
     }
 
-    // Placeholder for other tabs to avoid crashing if clicked
     return <div className="p-10 text-center text-gray-500">Module coming soon.</div>;
   };
 
@@ -329,6 +354,14 @@ export function CompanySettings() {
           </main>
         </div>
       </div>
+      
+      {/* Render the Manage Team Modal if active */}
+      {showManageTeam && (
+          <ManageTeamModal 
+              companyId={currentCompanyProfile.id} 
+              onClose={() => setShowManageTeam(false)} 
+          />
+      )}
     </div>
   );
 }

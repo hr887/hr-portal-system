@@ -1,8 +1,8 @@
 // src/components/admin/ApplicationInfo.jsx
 import React from 'react';
 import { Section, InfoGrid, InfoItem } from './ApplicationUI.jsx';
-import { getFieldValue } from '../../utils/helpers.js';
-import { Phone, CheckCircle, XCircle, AlertTriangle, FileSignature, Clock } from 'lucide-react';
+import { getFieldValue, formatPhoneNumber } from '../../utils/helpers.js'; // <-- Import helper
+import { Phone, CheckCircle, XCircle, AlertTriangle, FileSignature } from 'lucide-react';
 
 export function ApplicationInfo({ 
   appData, 
@@ -67,7 +67,7 @@ export function ApplicationInfo({
           <InfoItem label="Middle Name" value={appData.middleName} isEditing={isEditing} onChange={v => handleDataChange('middleName', v)} />
           <InfoItem label="Last Name" value={appData.lastName} isEditing={isEditing} onChange={v => handleDataChange('lastName', v)} />
           
-          {/* PHONE FIELD WITH CLICK ACTION */}
+          {/* PHONE FIELD WITH FORMATTING */}
           <div className="col-span-1">
              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label>
              {isEditing ? (
@@ -83,10 +83,10 @@ export function ApplicationInfo({
                         className="text-lg font-medium text-blue-600 hover:underline flex items-center gap-2 transition-colors"
                         title="Call this number"
                      >
-                        <Phone size={16} className="fill-blue-100"/> {getFieldValue(appData.phone)}
+                        <Phone size={16} className="fill-blue-100"/> {formatPhoneNumber(getFieldValue(appData.phone))}
                      </button>
                  ) : (
-                     <p className="text-lg font-medium text-gray-900">{getFieldValue(appData.phone)}</p>
+                     <p className="text-lg font-medium text-gray-900">{formatPhoneNumber(getFieldValue(appData.phone))}</p>
                  )
              )}
           </div>

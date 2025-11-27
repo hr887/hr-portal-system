@@ -1,15 +1,18 @@
 // src/components/ApplicationDetailView.jsx
 import React, { useState, useEffect } from 'react';
-import { getApplicationDoc, updateApplicationData, getCompanyProfile } from '../firebase/firestore.js'; 
-import { getFileUrl } from '../firebase/storage.js'; 
-import { storage } from '../firebase/config.js';
+import { doc, getDoc, updateDoc } from "firebase/firestore"; // Direct imports for dynamic paths
+import { db, storage } from '../firebase/config';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; 
 import { getFieldValue } from '../utils/helpers.js';
 import { generateApplicationPDF } from '../utils/pdfGenerator.js';
+import { getCompanyProfile } from '../firebase/firestore.js';
 import { useData } from '../App.jsx';
-import { Download, X, ArrowRight, Edit2, Save, Trash2, FileText, UserCheck, Folder, FileSignature, MessageSquare, Phone } from 'lucide-react';
+import { 
+  Download, X, ArrowRight, Edit2, Save, Trash2, 
+  FileText, UserCheck, Folder, FileSignature, MessageSquare, Phone 
+} from 'lucide-react';
 
-// Child Components
+// --- Child Components ---
 import { ApplicationInfo } from './admin/ApplicationInfo.jsx';
 import { MoveApplicationModal, DeleteConfirmModal } from './admin/ApplicationModals.jsx';
 import { DQFileTab } from './admin/DQFileTab.jsx';
@@ -17,6 +20,7 @@ import { GeneralDocumentsTab } from './admin/GeneralDocumentsTab.jsx';
 import { SendOfferModal } from './admin/SendOfferModal.jsx';
 import { NotesTab } from './admin/NotesTab.jsx';
 
+// --- Agreement Templates ---
 const agreementTemplates = [
   { id: 'agreement-release', title: 'RELEASE AND WAIVER', text: `[COMPANY_NAME] is released from all liability in responding to inquiries and releasing information in connection with my application.` },
   { id: 'agreement-certify', title: 'CERTIFICATION', text: `My signature below certifies that this application was completed by me, and that all entries on it and information in it is true and complete to the best of my knowledge.` },
@@ -47,23 +51,28 @@ export function ApplicationDetailView({
   onClosePanel, 
   onStatusUpdate,
   isCompanyAdmin,
-  onPhoneClick // <--- NEW: Receiving the call function from Dashboard
+  onPhoneClick 
 }) {
   const { currentUserClaims } = useData();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // Data State
   const [appData, setAppData] = useState(null);
   const [companyProfile, setCompanyProfile] = useState(null);
+  const [collectionName, setCollectionName] = useState('applications'); // 'applications' or 'leads'
   
   // Modal State
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
   
+  // Edit/Upload State
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
+  // URLs & Status
   const [fileUrls, setFileUrls] = useState({ cdl: null, ssc: null, medical: null, twic: null, mvrConsent: null, drugTestConsent: null });
   const [currentStatus, setCurrentStatus] = useState('');
   
@@ -71,32 +80,49 @@ export function ApplicationDetailView({
 
   const isSuperAdmin = currentUserClaims?.roles?.globalRole === 'super_admin';
 
+  // --- LOAD DATA ---
   const loadApplication = async () => {
     if (!companyId || !applicationId) return;
     setLoading(true);
     setError('');
+    
     try {
-      const [docSnap, companyProf] = await Promise.all([
-        getApplicationDoc(companyId, applicationId),
-        getCompanyProfile(companyId)
-      ]);
-
+      // 1. Fetch Company Profile
+      const companyProf = await getCompanyProfile(companyId);
       setCompanyProfile(companyProf);
-      
+
+      // 2. Determine Collection & Fetch Doc
+      // Try 'applications' first
+      let coll = 'applications';
+      let docRef = doc(db, "companies", companyId, coll, applicationId);
+      let docSnap = await getDoc(docRef);
+
+      // If not found, try 'leads'
+      if (!docSnap.exists()) {
+          coll = 'leads';
+          docRef = doc(db, "companies", companyId, coll, applicationId);
+          docSnap = await getDoc(docRef);
+      }
+
       if (docSnap.exists()) {
+        setCollectionName(coll);
         const data = docSnap.data();
         setAppData(data);
         setCurrentStatus(data.status || 'New Application');
         
+        // Helper to get URL
         const getUrl = async (fileData) => {
           if (!fileData) return null;
           if (fileData.storagePath) {
-            const url = await getFileUrl(fileData.storagePath);
-            if (url) return url;
+             // Using getFileUrl from storage.js logic inline here for simplicity
+             try {
+                 return await getDownloadURL(ref(storage, fileData.storagePath));
+             } catch (e) { return null; }
           }
           return fileData.url || null; 
         };
 
+        // Fetch file URLs
         const [cdl, cdlBack, ssc, medical, twic, mvrConsent, drugTestConsent] = await Promise.all([
           getUrl(data['cdl-front']),
           getUrl(data['cdl-back']),
@@ -113,7 +139,7 @@ export function ApplicationDetailView({
         setError(`Could not find application details.`);
       }
     } catch (err) {
-      console.error("Error fetching document or files:", err);
+      console.error("Error fetching document:", err);
       setError("Error: Could not load application.");
     } finally {
       setLoading(false);
@@ -125,6 +151,8 @@ export function ApplicationDetailView({
     loadApplication();
   }, [companyId, applicationId]);
 
+  // --- HANDLERS ---
+
   const handleDataChange = (field, value) => {
     setAppData(prev => ({ ...prev, [field]: value }));
   };
@@ -133,11 +161,14 @@ export function ApplicationDetailView({
     if (!file) return;
     setIsUploading(true);
     
+    // Delete old file if exists
     const oldStoragePath = appData[fieldKey]?.storagePath;
     if (oldStoragePath) {
         try { await deleteObject(ref(storage, oldStoragePath)); } catch (e) {}
     }
 
+    // Upload new file
+    // Note: We store in 'applications' folder even for leads to keep storage rules simple
     const storagePath = `companies/${companyId}/applications/${applicationId}/${fieldKey}-${file.name}`;
     const fileRef = ref(storage, storagePath);
 
@@ -149,7 +180,9 @@ export function ApplicationDetailView({
         setAppData(prev => ({ ...prev, [fieldKey]: fileData }));
         setFileUrls(prev => ({ ...prev, [fieldKey]: newUrl }));
         
-        await updateApplicationData(companyId, applicationId, { [fieldKey]: fileData });
+        // Update Firestore (Dynamic Path)
+        const docRef = doc(db, "companies", companyId, collectionName, applicationId);
+        await updateDoc(docRef, { [fieldKey]: fileData });
         
     } catch (error) {
         alert("File upload failed.");
@@ -165,7 +198,11 @@ export function ApplicationDetailView({
         await deleteObject(ref(storage, storagePath));
         setAppData(prev => ({ ...prev, [fieldKey]: null }));
         setFileUrls(prev => ({ ...prev, [fieldKey]: null }));
-        await updateApplicationData(companyId, applicationId, { [fieldKey]: null });
+        
+        // Update Firestore
+        const docRef = doc(db, "companies", companyId, collectionName, applicationId);
+        await updateDoc(docRef, { [fieldKey]: null });
+
     } catch (error) {
         alert("File deletion failed.");
     } finally {
@@ -176,7 +213,9 @@ export function ApplicationDetailView({
   const handleSaveEdit = async () => {
     setIsSaving(true);
     try {
-        await updateApplicationData(companyId, applicationId, appData);
+        // Save using dynamic path
+        const docRef = doc(db, "companies", companyId, collectionName, applicationId);
+        await updateDoc(docRef, appData);
         setIsEditing(false);
         onStatusUpdate(); 
     } catch (error) {
@@ -200,9 +239,16 @@ export function ApplicationDetailView({
     }
   };
   
-  const handleStatusUpdate = (newStatus) => {
-    setCurrentStatus(newStatus);
-    onStatusUpdate();
+  const handleStatusUpdate = async (newStatus) => {
+    try {
+      const docRef = doc(db, "companies", companyId, collectionName, applicationId);
+      await updateDoc(docRef, { status: newStatus });
+      setCurrentStatus(newStatus);
+      onStatusUpdate();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      alert("Failed to update status.");
+    }
   };
   
   const handleManagementComplete = () => {
@@ -213,6 +259,7 @@ export function ApplicationDetailView({
   const currentAppName = getFieldValue(appData?.['firstName']) + ' ' + getFieldValue(appData?.['lastName']);
   const driverId = appData?.driverId || appData?.userId;
 
+  // --- RENDER CONTENT ---
   const renderTabContent = () => {
     if (loading) return <p className="text-gray-700 text-center p-10">Loading details...</p>;
     if (error) return <p className="text-red-600 text-center p-10">{error}</p>;
@@ -235,12 +282,18 @@ export function ApplicationDetailView({
             handleStatusUpdate={handleStatusUpdate}
             isCompanyAdmin={isCompanyAdmin} 
             isSuperAdmin={isSuperAdmin}
-            onPhoneClick={onPhoneClick} // <--- Passing the function down
+            onPhoneClick={onPhoneClick} 
           />
         );
-      case 'dqFile': return <DQFileTab companyId={companyId} applicationId={applicationId} />;
-      case 'documents': return <GeneralDocumentsTab companyId={companyId} applicationId={applicationId} appData={appData} fileUrls={fileUrls} />;
-      case 'notes': return <NotesTab companyId={companyId} applicationId={applicationId} />; 
+      case 'dqFile': 
+        // Pass collectionName to fetch from the right place
+        return <DQFileTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />;
+      case 'documents': 
+        // Pass collectionName
+        return <GeneralDocumentsTab companyId={companyId} applicationId={applicationId} appData={appData} fileUrls={fileUrls} collectionName={collectionName} />;
+      case 'notes': 
+        // Pass collectionName
+        return <NotesTab companyId={companyId} applicationId={applicationId} collectionName={collectionName} />; 
       default: return null;
     }
   };
@@ -248,13 +301,13 @@ export function ApplicationDetailView({
   return (
     <div className="bg-gray-50 rounded-xl shadow-xl w-full flex flex-col h-full border border-gray-200 min-h-0">
       
+      {/* Header */}
       <div className="p-4 border-b border-gray-200 bg-white rounded-t-lg flex justify-between items-center shrink-0">
         <div className="flex items-center gap-3">
             <h3 id="modal-title" className="text-2xl font-bold text-gray-800">
               {loading ? "Loading..." : currentAppName}
             </h3>
             
-            {/* --- CALL BUTTON IN HEADER --- */}
             {!loading && appData && appData.phone && (
                 <button 
                     onClick={onPhoneClick}
@@ -265,8 +318,7 @@ export function ApplicationDetailView({
                 </button>
             )}
 
-            {/* Send Offer Button */}
-            {['Approved', 'Background Check'].includes(currentStatus) && (
+            {['Approved', 'Background Check', 'Contacted'].includes(currentStatus) && (
                 <button 
                     onClick={() => setShowOfferModal(true)}
                     className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded-full shadow-sm hover:bg-green-700 transition flex items-center gap-1"
@@ -287,6 +339,7 @@ export function ApplicationDetailView({
         </div>
       </div>
       
+      {/* Tabs */}
       <div className="bg-white border-b border-gray-200 flex items-center px-4 sm:px-6 shrink-0">
         <TabButton label="Application" icon={<FileText size={16} />} isActive={activeTab === 'application'} onClick={() => setActiveTab('application')} />
         <TabButton label="DQ File" icon={<UserCheck size={16} />} isActive={activeTab === 'dqFile'} onClick={() => setActiveTab('dqFile')} />
@@ -294,10 +347,12 @@ export function ApplicationDetailView({
         <TabButton label="Notes" icon={<MessageSquare size={16} />} isActive={activeTab === 'notes'} onClick={() => setActiveTab('notes')} />
       </div>
       
+      {/* Body */}
       <div id="modal-body" className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 min-h-0">
         {renderTabContent()}
       </div>
 
+      {/* Footer */}
       <footer className="p-4 bg-white border-t border-gray-200 flex justify-between items-center rounded-b-lg shrink-0">
         <div className="flex gap-3">
           {activeTab === 'application' && isSuperAdmin && !isEditing && (
@@ -327,6 +382,7 @@ export function ApplicationDetailView({
         )}
       </footer>
 
+      {/* Modals */}
       {showDeleteConfirm && <DeleteConfirmModal appName={currentAppName} companyId={companyId} applicationId={applicationId} onClose={() => setShowDeleteConfirm(false)} onDeletionComplete={handleManagementComplete} />}
       {showMoveModal && isSuperAdmin && <MoveApplicationModal sourceCompanyId={companyId} applicationId={applicationId} onClose={() => setShowMoveModal(false)} onMoveComplete={handleManagementComplete} />}
       
