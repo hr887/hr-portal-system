@@ -10,14 +10,20 @@ import {
   doc, 
   updateDoc 
 } from "firebase/firestore";
-import { db } from '../firebase/config'; // HR Portal usually exports as 'db'
+import { db } from '../firebase/config';
 
 /**
 * Sends a notification to a specific user.
+* @param {string} recipientId - UID of the user receiving the notification.
+* @param {string} title - Short header.
+* @param {string} message - Body text.
+* @param {string} type - 'info', 'success', 'warning', 'error', 'callback'.
+* @param {string} link - Optional URL.
+* @param {Date} scheduledFor - Optional JS Date object for future events (callbacks).
+* @param {object} metadata - Optional data (e.g. leadId, driverName) for UI logic.
 */
-export async function sendNotification({ recipientId, title, message, type = 'info', link = null }) {
+export async function sendNotification({ recipientId, title, message, type = 'info', link = null, scheduledFor = null, metadata = {} }) {
   if (!recipientId) return;
-
   try {
       await addDoc(collection(db, "notifications"), {
           recipientId,
@@ -25,6 +31,8 @@ export async function sendNotification({ recipientId, title, message, type = 'in
           message,
           type,
           link,
+          scheduledFor: scheduledFor ? scheduledFor.toISOString() : null, // Store as ISO string
+          metadata,
           isRead: false,
           createdAt: serverTimestamp()
       });
@@ -38,13 +46,16 @@ export async function sendNotification({ recipientId, title, message, type = 'in
 */
 export function subscribeToNotifications(userId, callback) {
   if (!userId) return () => {};
-
+  
+  // We fetch all notifications for the user. 
+  // Filtering "Scheduled" vs "Immediate" will happen in the UI component 
+  // based on the 'scheduledFor' field.
   const q = query(
       collection(db, "notifications"),
       where("recipientId", "==", userId),
       orderBy("createdAt", "desc")
   );
-
+  
   return onSnapshot(q, (snapshot) => {
       const notifications = snapshot.docs.map(doc => ({
           id: doc.id,
@@ -67,6 +78,9 @@ export async function markNotificationAsRead(notificationId) {
 * Marks ALL notifications as read for a user.
 */
 export async function markAllAsRead(notifications) {
+  // In a real app, use a WriteBatch. For now, we loop (simple MVP).
+  // We typically only mark "current" notifications as read, not future ones,
+  // but for this helper, we'll mark whatever is passed in.
   notifications.forEach(n => {
       if (!n.isRead) markNotificationAsRead(n.id);
   });
