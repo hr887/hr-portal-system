@@ -1,10 +1,9 @@
-// hr portal/src/components/modals/CallOutcomeModalUI.jsx
+// src/components/modals/CallOutcomeModalUI.jsx
+import React from 'react';
+import { Phone, X, Save, Loader2, MessageSquare, CheckCircle, XCircle, Clock, AlertCircle, Ban, ThumbsDown, Truck, ExternalLink } from 'lucide-react';
+import { normalizePhone, formatPhoneNumber } from '../../utils/helpers';
 
-import React, { useState } from 'react';
-import { Phone, X, Save, Loader2, MessageSquare, CheckCircle, XCircle, Clock, AlertCircle, Ban, ThumbsDown, Truck, Calendar, ExternalLink } from 'lucide-react';
-import { normalizePhone } from '../../utils/helpers'; // Import the helper for consistency
-
-// --- CONSTANTS (Moved from original Modal) ---
+// --- CONSTANTS ---
 const OUTCOMES_CONFIG = [
     { id: 'connected', label: 'Connected / Spoke', icon: <CheckCircle size={18} className="text-green-600"/> },
     { id: 'voicemail', label: 'Left Voicemail', icon: <MessageSquare size={18} className="text-yellow-600"/> },
@@ -16,21 +15,12 @@ const OUTCOMES_CONFIG = [
 ];
 
 const DRIVER_TYPES = [
-    "Dry Van", 
-    "Reefer", 
-    "Flatbed", 
-    "Tanker", 
-    "Box Truck", 
-    "Car Hauler", 
-    "Step Deck", 
-    "Lowboy", 
-    "Conestoga", 
-    "Intermodal", 
-    "Power Only", 
-    "Hotshot"
+    "Dry Van", "Reefer", "Flatbed", "Tanker", "Box Truck", 
+    "Car Hauler", "Step Deck", "Lowboy", "Conestoga", 
+    "Intermodal", "Power Only", "Hotshot"
 ];
 
-// Helper to clean phone for Telegram link (logic relies on normalizePhone)
+// Helper to clean phone for Telegram link
 const getTelegramLink = (rawPhone) => {
     if (!rawPhone) return '';
     let cleaned = normalizePhone(rawPhone); 
@@ -55,7 +45,10 @@ export function CallOutcomeModalUI({
 }) {
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[70] backdrop-blur-sm" onClick={onClose}>
+          
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200 overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                
+                {/* Header */}
                 <div className="bg-blue-600 p-4 text-white flex justify-between items-center shrink-0">
                     <h3 className="font-bold flex items-center gap-2">
                         <Phone size={20}/> Log Call Result
@@ -63,10 +56,28 @@ export function CallOutcomeModalUI({
                     <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-full"><X size={20}/></button>
                 </div>
 
+                {/* --- CALL BUTTON SECTION (NEW) --- */}
+                <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col items-center justify-center gap-2">
+                    <p className="text-sm text-gray-500 font-medium">Contacting: <span className="text-gray-900 font-bold">{lead.firstName} {lead.lastName}</span></p>
+                    
+                    {lead.phone ? (
+                        <a 
+                            href={`tel:${lead.phone}`}
+                            className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white font-bold rounded-full shadow-md hover:bg-green-700 hover:shadow-lg transition-all transform hover:-translate-y-0.5"
+                        >
+                            <Phone size={20} fill="currentColor" /> 
+                            Call {formatPhoneNumber(lead.phone)}
+                        </a>
+                    ) : (
+                        <div className="text-red-500 text-sm font-bold flex items-center gap-2">
+                            <AlertCircle size={16}/> No Phone Number
+                        </div>
+                    )}
+                </div>
+
+                {/* Form Area */}
                 <form onSubmit={handleSave} className="p-6 space-y-4 overflow-y-auto">
-                    <p className="text-sm text-gray-600">
-                        Result for <strong>{lead.firstName} {lead.lastName}</strong>:
-                    </p>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Select Outcome</p>
 
                     <div className="grid grid-cols-2 gap-3">
                         {OUTCOMES_CONFIG.map(opt => (
@@ -169,11 +180,10 @@ export function CallOutcomeModalUI({
                         type="submit"
                         onClick={handleSave} 
                         disabled={saving}
-                        className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                        className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
                     >
-                        {saving ?
-                            <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>}
-                        {showCallbackSelect ? 'Schedule & Save' : 'Save Log'}
+                        {saving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>}
+                        {showCallbackSelect ? 'Schedule & Save' : 'Save Result'}
                     </button>
                 </div>
             </div>

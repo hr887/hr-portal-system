@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { generateApplicationPDF } from '../utils/pdfGenerator.js';
 import { getFieldValue } from '../utils/helpers.js';
-// UPDATED: Import from new context file
 import { useData } from '../context/DataContext';
 import { useApplicationDetails } from '../hooks/useApplicationDetails';
 import { 
@@ -40,16 +39,18 @@ export function ApplicationDetailView({
   applicationId, 
   onClosePanel, 
   onStatusUpdate,
-  isCompanyAdmin,
+  isCompanyAdmin, // This might be false for HR users, so we use canEdit instead for permissions
   onPhoneClick 
 }) {
   const { currentUserClaims } = useData();
+  
+  // Hook now calculates 'canEdit' correctly for HR Users too
   const {
     loading, error, appData, companyProfile, collectionName, fileUrls, currentStatus,
     isEditing, setIsEditing, isSaving, isUploading, canEdit,
     teamMembers, assignedTo, handleAssignChange,
     loadApplication, handleDataChange, handleAdminFileUpload, handleAdminFileDelete, handleSaveEdit, handleStatusUpdate,
-    handleDriverTypeUpdate // <-- Destructured here
+    handleDriverTypeUpdate 
   } = useApplicationDetails(companyId, applicationId, onStatusUpdate);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -95,10 +96,10 @@ export function ApplicationDetailView({
             applicationId={applicationId}
             currentStatus={currentStatus}
             handleStatusUpdate={handleStatusUpdate}
-            // Pass the new handler down
             handleDriverTypeUpdate={handleDriverTypeUpdate} 
             isCompanyAdmin={isCompanyAdmin} 
             isSuperAdmin={isSuperAdmin}
+            canEdit={canEdit} // <--- PASSING THE PERMISSION HERE
             onPhoneClick={onPhoneClick} 
           />
         );
@@ -135,6 +136,7 @@ export function ApplicationDetailView({
             <div className="flex items-center gap-3">
                 {!loading && appData && (
                     <>
+                        {/* Check canEdit to show Offer button for recruiters too */}
                         {canEdit && ['Approved', 'Background Check'].includes(currentStatus) && (
                             <button onClick={() => setShowOfferModal(true)} className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded-lg hover:bg-green-700 transition shadow-sm flex items-center gap-2">
                                 <FileSignature size={16} /> Offer
@@ -194,11 +196,13 @@ export function ApplicationDetailView({
         {(canEdit || isSuperAdmin) && activeTab === 'application' && (
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center shrink-0 z-10">
                  <div className="flex gap-3">
+                    {/* Only Super Admin can move apps, recruiters shouldn't */}
                     {isSuperAdmin && !isEditing && (
                         <button className="px-4 py-2 bg-indigo-100 text-indigo-700 font-bold rounded-lg hover:bg-indigo-200 transition flex items-center gap-2" onClick={() => setShowMoveModal(true)}>
                             <ArrowRight size={16} /> Move
                         </button>
                     )}
+                 
                     {!isEditing ? (
                         <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-100 transition flex items-center gap-2 shadow-sm" onClick={() => setIsEditing(true)}>
                             <Edit2 size={16} /> Edit Application

@@ -10,7 +10,9 @@ const DRIVER_TYPES = ["Dry Van", "Reefer", "Flatbed", "Tanker", "Box Truck", "Ca
 export function ApplicationInfo({ 
   appData, fileUrls, isEditing, isUploading, handleDataChange,
   companyId, applicationId, currentStatus, handleStatusUpdate,
-  handleDriverTypeUpdate, isCompanyAdmin, isSuperAdmin, onPhoneClick 
+  handleDriverTypeUpdate, isCompanyAdmin, isSuperAdmin, 
+  canEdit, // <-- NEW PROP RECEIVED
+  onPhoneClick 
 }) {
   
   if (!appData) return null;
@@ -40,7 +42,7 @@ export function ApplicationInfo({
       let currentTypes = appData.driverType || [];
       // Ensure it's an array
       if (!Array.isArray(currentTypes)) currentTypes = [currentTypes];
-      
+
       const newTypes = currentTypes.includes(type) 
           ? currentTypes.filter(t => t !== type)
           : [...currentTypes, type];
@@ -61,10 +63,11 @@ export function ApplicationInfo({
            </div>
         </div>
         
-        {(isCompanyAdmin || isSuperAdmin) && !isEditing && (
+        {/* UPDATED CONDITION: Use 'canEdit' so Recruiters can also change status */}
+        {canEdit && !isEditing && (
            <div className="flex flex-col sm:flex-row gap-3 items-end sm:items-center w-full sm:w-auto">
              <select 
-               className="w-full sm:w-auto p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                className="w-full sm:w-auto p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
                value={currentStatus}
                onChange={(e) => handleStatusUpdate(e.target.value)}
              >
@@ -185,7 +188,7 @@ export function ApplicationInfo({
 
       {/* --- CUSTOM QUESTIONS --- */}
       {appData.customAnswers && Object.keys(appData.customAnswers).length > 0 && (
-          <Section title="Supplemental Questions">
+         <Section title="Supplemental Questions">
               <div className="space-y-4">
                   {Object.entries(appData.customAnswers).map(([question, answer], i) => (
                       <div key={i} className="p-3 bg-blue-50 rounded-lg border border-blue-100">
@@ -229,7 +232,7 @@ export function ApplicationInfo({
                       <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg inline-block">
                           <img src={appData.signature} alt="Applicant Signature" className="max-h-24 object-contain mix-blend-multiply" />
                       </div>
-                  ) : (
+                 ) : (
                       <div className="p-4 bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-lg flex items-center gap-2">
                           <AlertTriangle size={18}/> No digital signature on file.
                       </div>

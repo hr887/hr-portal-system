@@ -15,7 +15,7 @@ export function useCompanyDashboard(companyId) {
   const [activeTab, setActiveTab] = useState('applications');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // --- NEW: Filters State ---
+  // --- Filters State ---
   const [filters, setFilters] = useState({
       state: '',
       driverType: '',
@@ -31,7 +31,6 @@ export function useCompanyDashboard(companyId) {
     if (!companyId) return;
     setLoading(true);
     setError('');
-
     try {
       const [appList, allLeads] = await Promise.all([
           loadApplications(companyId),
@@ -82,9 +81,16 @@ export function useCompanyDashboard(companyId) {
     const { key, direction } = sortConfig;
     return [...list].sort((a, b) => {
       const getString = (obj, k) => {
-         if(k === 'name') return `${obj['firstName']||''} ${obj['lastName']||''}`.toLowerCase();
+         // Helper to safely get nested values for sorting
+         const val = obj[k] || obj?.personalInfo?.[k] || '';
+         if(k === 'name') {
+             const f = obj['firstName'] || obj?.personalInfo?.firstName || '';
+             const l = obj['lastName'] || obj?.personalInfo?.lastName || '';
+             return `${f} ${l}`.toLowerCase();
+         }
          if(k === 'submittedAt') return obj.submittedAt?.seconds || obj.createdAt?.seconds || 0;
-         return (obj[k] || '').toString().toLowerCase();
+         
+         return (val).toString().toLowerCase();
       };
       
       const aVal = getString(a, key);
@@ -98,37 +104,75 @@ export function useCompanyDashboard(companyId) {
 
   const filteredList = useMemo(() => {
     // 1. Text Search
-    const term = searchQuery.toLowerCase();
+    const term = searchQuery.toLowerCase().trim();
+    
     let filtered = currentList.filter(item => {
-      const name = `${item['firstName'] || ''} ${item['lastName'] || ''}`.toLowerCase();
-      const phone = item.phone?.toLowerCase() || '';
-      const email = item.email?.toLowerCase() || '';
-      return name.includes(term) || phone.includes(term) || email.includes(term);
+      if (!item) return false;
+      // Safe Accessors with Default Values
+      const fName = (item.firstName || item.personalInfo?.firstName || '').toLowerCase();
+      const lName = (item.lastName || item.personalInfo?.lastName || '').toLowerCase();
+      const phone = (item.phone || item.personalInfo?.phone || '').toLowerCase();
+      const email = (item.email || item.personalInfo?.email || '').toLowerCase();
+      const fullName = `${fName} ${lName}`;
+
+      return fullName.includes(term) || phone.includes(term) || email.includes(term);
     });
 
     // 2. Advanced Filters
+    // STATE FILTER
     if (filters.state) {
-        filtered = filtered.filter(item => item.state?.toLowerCase() === filters.state.toLowerCase());
+         const stateSearch = filters.state.toLowerCase().trim();
+         filtered = filtered.filter(item => {
+             const val = item.state || item.personalInfo?.state || '';
+             return val.toLowerCase().includes(stateSearch);
+         });
     }
+    
+    // DRIVER TYPE FILTER
     if (filters.driverType) {
+        const typeSearch = filters.driverType.toLowerCase().trim();
         filtered = filtered.filter(item => {
-            // Check 'driverType' (Leads) or 'positionApplyingTo' (Apps)
-            const type = item.driverType || item.positionApplyingTo || '';
-            return type.toLowerCase().includes(filters.driverType.toLowerCase());
+            // Check root 'driverType', nested 'driverProfile.type', or 'positionApplyingTo'
+            const typeA = item.driverType;
+            const typeB = item.driverProfile?.type;
+            const typeC = item.positionApplyingTo;
+            
+            // Helper to check a value safely
+            const check = (val) => {
+                if (!val) return false;
+                if (Array.isArray(val)) {
+                    return val.some(v => String(v).toLowerCase().includes(typeSearch));
+                }
+                return String(val).toLowerCase().includes(typeSearch);
+            };
+
+            return check(typeA) || check(typeB) || check(typeC);
         });
     }
+    
+    // DOB FILTER
     if (filters.dob) {
-        filtered = filtered.filter(item => item.dob === filters.dob);
+        filtered = filtered.filter(item => {
+            const val = item.dob || item.personalInfo?.dob || '';
+            return val === filters.dob;
+        });
     }
+
+    // ASSIGNEE FILTER
     if (filters.assignee) {
-        filtered = filtered.filter(item => item.assignedToName?.toLowerCase().includes(filters.assignee.toLowerCase()));
+        const assigneeSearch = filters.assignee.toLowerCase().trim();
+        filtered = filtered.filter(item => {
+            // Safe access to assignedToName, defaulting to '' to prevent crashes
+            const assignee = (item.assignedToName || 'unassigned').toLowerCase();
+            return assignee.includes(assigneeSearch);
+        });
     }
 
     return sortList(filtered);
-  }, [searchQuery, currentList, sortConfig, filters]); // Added filters dependency
+  }, [searchQuery, currentList, sortConfig, filters]);
 
   const totalPages = Math.ceil(filteredList.length / itemsPerPage) || 1;
-  
+
   const paginatedData = useMemo(() => {
       const start = (currentPage - 1) * itemsPerPage;
       return filteredList.slice(start, start + itemsPerPage);

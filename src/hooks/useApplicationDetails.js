@@ -2,10 +2,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { db, storage } from '../firebase/config';
+import { db, storage, auth } from '../firebase/config';
 import { getCompanyProfile } from '../firebase/firestore';
 import { logActivity } from '../utils/activityLogger';
-// UPDATED: Import from new context file
 import { useData } from '../context/DataContext';
 import { useToast } from '../components/feedback/ToastProvider';
 
@@ -28,10 +27,12 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   const [teamMembers, setTeamMembers] = useState([]);
   const [assignedTo, setAssignedTo] = useState('');
 
-  // Permission Check
+  // --- PERMISSION CHECK FIXED ---
+  // Allow Super Admin OR Company Admin OR HR User (Recruiter) to edit
+  const userRole = currentUserClaims?.roles?.[companyId];
   const canEdit = 
     currentUserClaims?.roles?.globalRole === 'super_admin' || 
-    currentUserClaims?.roles?.[companyId] === 'company_admin';
+    ['company_admin', 'hr_user'].includes(userRole);
 
   // 1. Fetch Team
   useEffect(() => {
@@ -192,7 +193,7 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
     try {
         const docRef = doc(db, "companies", companyId, collectionName, applicationId);
         await updateDoc(docRef, appData);
-        await logActivity(companyId, collectionName, applicationId, "Details Updated", "Admin edited application details");
+        await logActivity(companyId, collectionName, applicationId, "Details Updated", "User edited application details");
         showSuccess("Changes saved successfully");
         setIsEditing(false);
         if (onStatusUpdate) onStatusUpdate();

@@ -40,8 +40,8 @@ export function DashboardToolbar({
   
   // Helper: Handle Filter Updates
   const handleFilterChange = (key, value) => {
-      // Note: setCurrentPage(1) is handled in the parent hook, we just update the filter state here.
-      setFilters(prev => ({ ...prev, [key]: value }));
+      // setFilters is a wrapper from parent that handles page reset
+      setFilters(key, value);
   };
 
   const hasActiveFilters = useMemo(() => {

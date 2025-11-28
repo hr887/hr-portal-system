@@ -1,7 +1,6 @@
 // src/components/CompanyAdminDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom'; 
-// UPDATED: Import from new context file
 import { useData } from '../context/DataContext';
 import { auth } from '../firebase/config.js';
 import { getPortalUser } from '../firebase/firestore.js'; 
@@ -58,8 +57,9 @@ export function CompanyAdminDashboard() {
 
   const handlePhoneClick = (e, item) => {
       if(e) e.stopPropagation();
+      
+      // FIXED: Removed auto-dial logic. Now it just opens the modal.
       if(item && item.phone) {
-          window.location.href = `tel:${item.phone}`;
           setCallModalData({ lead: item });
       } else {
           showError("No phone number available for this driver.");
