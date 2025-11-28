@@ -2,7 +2,7 @@
 import React from 'react';
 import { Section, InfoGrid, InfoItem } from './ApplicationUI.jsx';
 import { getFieldValue, formatPhoneNumber } from '../../utils/helpers.js';
-import { Phone, CheckCircle, XCircle, AlertTriangle, FileSignature, Truck } from 'lucide-react';
+import { Phone, CheckCircle, XCircle, AlertTriangle, FileSignature, Truck, HelpCircle, AlertCircle } from 'lucide-react';
 
 const DRIVER_TYPES = [
     "Dry Van", "Reefer", "Flatbed", "Box Truck", "Tanker", "Team"
@@ -18,7 +18,7 @@ export function ApplicationInfo({
   applicationId,
   currentStatus,
   handleStatusUpdate,
-  handleDriverTypeUpdate, // <-- New Prop for instant header updates
+  handleDriverTypeUpdate,
   isCompanyAdmin,
   isSuperAdmin,
   onPhoneClick 
@@ -26,12 +26,31 @@ export function ApplicationInfo({
   
   if (!appData) return null;
 
-  // Helper for Yes/No Badges
-  const YesNoBadge = ({ value }) => (
-      <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${value === 'yes' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-          {value === 'yes' ? 'YES' : 'NO'}
-      </span>
-  );
+  // --- HELPER: Safely display Yes/No/Unknown ---
+  // Fixes the issue where missing data defaulted to "No/Not Authorized"
+  const renderBooleanStatus = (val, labelTrue, labelFalse) => {
+      // 1. Handle missing data explicitly
+      if (val === null || val === undefined || val === '') {
+          return (
+            <div className="flex items-center gap-2">
+                <AlertCircle className="text-gray-300" size={20}/>
+                <span className="text-gray-400 italic">Not Specified</span>
+            </div>
+          );
+      }
+
+      // 2. Handle string 'yes'/'no' or boolean true/false
+      const isTrue = String(val).toLowerCase() === 'yes' || val === true;
+      
+      return (
+          <div className="flex items-center gap-2">
+              {isTrue ? <CheckCircle className="text-green-500" size={20}/> : <XCircle className="text-red-500" size={20}/>}
+              <span className={isTrue ? "text-green-700 font-medium" : "text-red-700 font-medium"}>
+                  {isTrue ? labelTrue : labelFalse}
+              </span>
+          </div>
+      );
+  };
 
   return (
     <div className="space-y-6">
@@ -49,12 +68,12 @@ export function ApplicationInfo({
         {(isCompanyAdmin || isSuperAdmin) && !isEditing && (
            <div className="flex flex-col sm:flex-row gap-3 items-end sm:items-center w-full sm:w-auto">
              
-             {/* DRIVER TYPE DROPDOWN (New) */}
+             {/* DRIVER TYPE DROPDOWN */}
              <div className="relative w-full sm:w-auto">
                 <Truck size={16} className="absolute left-2.5 top-3 text-gray-400 pointer-events-none"/>
                 <select
                    className="w-full sm:w-48 pl-9 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-300 transition-colors"
-                   value={appData.driverType || ''}
+                   value={appData.driverType || appData.positionApplyingTo || ''}
                    onChange={(e) => handleDriverTypeUpdate(e.target.value)}
                 >
                     <option value="">-- Set Type --</option>
@@ -69,12 +88,15 @@ export function ApplicationInfo({
                onChange={(e) => handleStatusUpdate(e.target.value)}
              >
                 <option value="New Application">New Application</option>
+                <option value="New Lead">New Lead</option>
                 <option value="Contacted">Contacted</option>
+                <option value="Attempted">Attempted</option>
                 <option value="In Review">In Review</option>
                 <option value="Background Check">Background Check</option>
                 <option value="Awaiting Documents">Awaiting Documents</option>
                 <option value="Approved">Approved</option>
                 <option value="Rejected">Rejected</option>
+                <option value="Disqualified">Disqualified</option>
              </select>
            </div>
         )}
@@ -122,29 +144,11 @@ export function ApplicationInfo({
             <InfoItem label="State" value={appData.state} isEditing={isEditing} onChange={v => handleDataChange('state', v)} />
             <InfoItem label="Zip" value={appData.zip} isEditing={isEditing} onChange={v => handleDataChange('zip', v)} />
         </div>
-
-        {/* Previous Address - 3 Years */}
-        <div className="mt-6">
-            <h4 className="text-sm font-bold text-gray-700 mb-2 border-b pb-1">Address History (3 Years)</h4>
-            <InfoGrid>
-                <div className="col-span-2">
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Lived at current address for 3 years?</label>
-                    <p className="font-medium">{getFieldValue(appData['residence-3-years'])}</p>
-                </div>
-                {appData['residence-3-years'] === 'no' && (
-                    <div className="col-span-3 bg-gray-50 p-3 rounded border border-gray-200">
-                        <p className="text-sm font-bold text-gray-600">Previous Address:</p>
-                        <p>{getFieldValue(appData.prevStreet)}, {getFieldValue(appData.prevCity)}, {getFieldValue(appData.prevState)} {getFieldValue(appData.prevZip)}</p>
-                    </div>
-                )}
-            </InfoGrid>
-        </div>
       </Section>
 
       {/* --- QUALIFICATIONS & LICENSE --- */}
       <Section title="Qualifications & License">
-          <InfoGrid>
-            {/* NEW DRIVER TYPE FIELD IN EDIT MODE */}
+         <InfoGrid>
             <InfoItem 
                 label="Driver Type / Position" 
                 value={appData.driverType || appData.positionApplyingTo} 
@@ -153,22 +157,47 @@ export function ApplicationInfo({
                 options={DRIVER_TYPES} 
             />
 
-            <InfoItem label="Experience" value={appData['experience-years'] || appData.experience} isEditing={isEditing} onChange={v => handleDataChange('experience-years', v)} />
+            <InfoItem 
+                label="Experience" 
+                value={appData['experience-years'] || appData.experience} 
+                isEditing={isEditing} 
+                onChange={v => handleDataChange('experience-years', v)} 
+            />
             
+            {/* Legal to Work */}
             <div className="col-span-1">
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Legal to Work?</label>
-                <div className="flex items-center gap-2 h-10">
-                     {appData['legal-work'] === 'yes' ? <CheckCircle className="text-green-500" size={20}/> : <XCircle className="text-red-500" size={20}/>}
-                    <span className="text-gray-900">{appData['legal-work'] === 'yes' ? 'Authorized' : 'Not Authorized'}</span>
-                </div>
+                {isEditing ? (
+                    <select 
+                        className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                        value={appData['legal-work'] || ''}
+                        onChange={(e) => handleDataChange('legal-work', e.target.value)}
+                    >
+                        <option value="">Select...</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
+                ) : (
+                    renderBooleanStatus(appData['legal-work'], 'Authorized', 'Not Authorized')
+                )}
             </div>
-            
-             <div className="col-span-1">
+        
+            {/* English Fluency */}
+            <div className="col-span-1">
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">English Fluency</label>
-                <div className="flex items-center gap-2 h-10">
-                     {appData['english-fluency'] === 'yes' ? <CheckCircle className="text-green-500" size={20}/> : <XCircle className="text-red-500" size={20}/>}
-                     <span className="text-gray-900">{appData['english-fluency'] === 'yes' ? 'Fluent' : 'Not Fluent'}</span>
-                </div>
+                {isEditing ? (
+                    <select 
+                        className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                        value={appData['english-fluency'] || ''}
+                        onChange={(e) => handleDataChange('english-fluency', e.target.value)}
+                    >
+                        <option value="">Select...</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
+                ) : (
+                    renderBooleanStatus(appData['english-fluency'], 'Fluent', 'Not Fluent')
+                )}
             </div>
          </InfoGrid>
 
@@ -184,46 +213,21 @@ export function ApplicationInfo({
          </div>
       </Section>
 
-      {/* --- DRIVING HISTORY --- */}
-      <Section title="Driving History & Safety">
-          <div className="space-y-4">
-              <div className="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-200">
-                  <span className="text-sm font-medium text-gray-700">Have you had any accidents in the last 3 years?</span>
-                  <YesNoBadge value={appData.accidents && appData.accidents.length > 0 ? 'yes' : 'no'} />
+      {/* --- CUSTOM QUESTIONS ANSWERS (Dynamically Rendered) --- */}
+      {appData.customAnswers && Object.keys(appData.customAnswers).length > 0 && (
+          <Section title="Supplemental Questions">
+              <div className="space-y-4">
+                  {Object.entries(appData.customAnswers).map(([question, answer], i) => (
+                      <div key={i} className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                          <p className="text-xs font-bold text-blue-700 uppercase mb-1 flex items-center gap-1">
+                             <HelpCircle size={12}/> {question}
+                          </p>
+                          <p className="text-sm text-gray-900 font-medium">{answer}</p>
+                      </div>
+                  ))}
               </div>
-              {appData.accidents && appData.accidents.length > 0 && (
-                  <div className="pl-4 border-l-2 border-red-200 space-y-3">
-                      {appData.accidents.map((acc, i) => (
-                          <div key={i} className="text-sm text-gray-600">
-                              <strong>{acc.date}</strong>: {acc.nature} ({acc.fatalities || 0} Fatalities, {acc.injuries || 0} Injuries)
-                          </div>
-                      ))}
-                  </div>
-              )}
-
-              <div className="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-200">
-                  <span className="text-sm font-medium text-gray-700">Traffic convictions/forfeitures in last 3 years?</span>
-                  <YesNoBadge value={appData.violations && appData.violations.length > 0 ? 'yes' : 'no'} />
-              </div>
-              {appData.violations && appData.violations.length > 0 && (
-                  <div className="pl-4 border-l-2 border-red-200 space-y-3">
-                      {appData.violations.map((vio, i) => (
-                          <div key={i} className="text-sm text-gray-600">
-                              <strong>{vio.date}</strong>: {vio.offense} ({vio.location}) - {vio.vehicleType}
-                          </div>
-                      ))}
-                  </div>
-              )}
-
-              <div className="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-200">
-                  <span className="text-sm font-medium text-gray-700">License denied, revoked, or suspended?</span>
-                  <YesNoBadge value={appData['revoked-licenses']} />
-              </div>
-              {appData['revoked-licenses'] === 'yes' && (
-                  <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{appData['revoked-details'] || "See explanation in notes."}</p>
-              )}
-          </div>
-      </Section>
+          </Section>
+      )}
 
       {/* --- EMPLOYMENT HISTORY --- */}
       <Section title="Employment History (10 Years)">
@@ -241,8 +245,6 @@ export function ApplicationInfo({
                               <p><span className="font-medium">Address:</span> {emp.address}, {emp.city}, {emp.state}</p>
                               <p><span className="font-medium">Position:</span> {emp.position}</p>
                               <p><span className="font-medium">Reason for Leaving:</span> {emp.reasonForLeaving}</p>
-                              <p><span className="font-medium">Subject to FMCSRs?</span> {emp.subjectToFmcsa === 'yes' ? 'Yes' : 'No'}</p>
-                              <p><span className="font-medium">Drug/Alcohol Tested?</span> {emp.safetySensitive === 'yes' ? 'Yes' : 'No'}</p>
                           </div>
                       </div>
                   ))}
@@ -269,26 +271,6 @@ export function ApplicationInfo({
                   <div className="mt-2 text-sm text-gray-500 flex items-center gap-2">
                       <FileSignature size={16}/> Signed on: <span className="font-medium text-gray-800">{appData['signature-date'] || 'Unknown Date'}</span>
                   </div>
-              </div>
-
-              <div className="space-y-2 text-sm text-gray-600">
-                  <h4 className="text-sm font-bold text-gray-500 uppercase mb-2">Consents Agreed</h4>
-                  <p className="flex items-center gap-2">
-                      {appData['agree-background-check'] ? <CheckCircle size={16} className="text-green-600"/> : <XCircle size={16} className="text-gray-400"/>}
-                      Background Check Authorization
-                  </p>
-                  <p className="flex items-center gap-2">
-                      {appData['agree-psp'] ? <CheckCircle size={16} className="text-green-600"/> : <XCircle size={16} className="text-gray-400"/>}
-                      PSP Report Authorization
-                  </p>
-                  <p className="flex items-center gap-2">
-                      {appData['agree-clearinghouse'] ? <CheckCircle size={16} className="text-green-600"/> : <XCircle size={16} className="text-gray-400"/>}
-                      Drug & Alcohol Clearinghouse
-                  </p>
-                  <p className="flex items-center gap-2">
-                      {appData['agree-electronic'] ? <CheckCircle size={16} className="text-green-600"/> : <XCircle size={16} className="text-gray-400"/>}
-                      Electronic Signature Consent
-                  </p>
               </div>
           </div>
       </Section>

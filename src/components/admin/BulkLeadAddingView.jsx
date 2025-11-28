@@ -5,7 +5,7 @@ import { writeBatch, doc, collection, serverTimestamp, query, where, getDocs } f
 import { useBulkImport } from '../../hooks/useBulkImport';
 import { BulkUploadLayout } from './BulkUploadLayout';
 
-export function BulkLeadAddingView({ onDataUpdate }) {
+export function BulkLeadAddingView({ onDataUpdate, onClose }) {
   // 1. Use the shared logic hook
   const {
     csvData,
@@ -80,7 +80,6 @@ export function BulkLeadAddingView({ onDataUpdate }) {
                 if(data.driverType) updatePayload["driverProfile.type"] = data.driverType;
 
                 currentBatch.update(docRef, updatePayload);
-
             } else {
                 // --- CREATE NEW ---
                 createdCount++;
@@ -156,7 +155,7 @@ export function BulkLeadAddingView({ onDataUpdate }) {
         reset={reset}
         // Actions
         onConfirm={handleConfirmUpload}
-        onClose={() => {}} // This component is usually embedded, not a modal, so close might be no-op or passed from parent
+        onClose={onClose} 
         uploading={uploading}
         progress={progress}
         stats={stats}

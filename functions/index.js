@@ -2,7 +2,7 @@
 
 const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const nodemailer = require("nodemailer");
 
 // Initialize the Firebase Admin App
@@ -20,23 +20,27 @@ async function processDriverData(data) {
 
   // 1. Find or Create Auth User
   try {
-    const newDriverAuth = await admin.auth().createUser({
-      email: email,
-      emailVerified: true,
-      displayName: `${data.firstName} ${data.lastName}`,
-      phoneNumber: phone || undefined
-    });
-    driverUid = newDriverAuth.uid;
-    console.log(`Created new Auth user for: ${email}`);
-  } catch (error) {
-    if (error.code === 'auth/email-already-exists') {
-      console.log(`User already exists for: ${email}`);
-      const existingUser = await admin.auth().getUserByEmail(email);
-      driverUid = existingUser.uid;
-    } else {
-      console.error("Error managing driver auth:", error);
-      return; 
+    try {
+        const existingUser = await admin.auth().getUserByEmail(email);
+        driverUid = existingUser.uid;
+        console.log(`Driver exists: ${email}`);
+    } catch (e) {
+        if (e.code === 'auth/user-not-found') {
+            const newDriverAuth = await admin.auth().createUser({
+                email: email,
+                emailVerified: true,
+                displayName: `${data.firstName} ${data.lastName}`,
+                phoneNumber: phone || undefined
+            });
+            driverUid = newDriverAuth.uid;
+            console.log(`Created new Driver Auth: ${email}`);
+        } else {
+            throw e;
+        }
     }
+  } catch (error) {
+    console.error("Error managing driver auth:", error);
+    return; 
   }
 
   // 2. Create/Update Master Profile
@@ -72,44 +76,139 @@ async function processDriverData(data) {
 }
 
 
-// --- EXPORT 1: Create Portal User (Admin Only) ---
+// --- EXPORT 1: Create Portal User (Handles Existing Users) ---
 exports.createPortalUser = onCall(async (request) => {
   const { fullName, email, password, companyId, role } = request.data;
 
+  // 1. Auth Check
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
 
   const callerClaims = request.auth.token.roles || {};
   const isSuperAdmin = callerClaims.globalRole === "super_admin";
-  let newRoleClaims = {};
   
+  // 2. Permission Check
   if (role === "super_admin") {
     if (!isSuperAdmin) throw new HttpsError("permission-denied", "Super Admin only.");
-    newRoleClaims = { globalRole: "super_admin" };
   } else if (role === "company_admin" || role === "hr_user") {
     const isAdminForThisCompany = callerClaims[companyId] === "company_admin";
     if (!isSuperAdmin && !isAdminForThisCompany) throw new HttpsError("permission-denied", "Permission denied.");
-    newRoleClaims = { [companyId]: role };
   } else {
     throw new HttpsError("invalid-argument", "Invalid role.");
   }
 
+  const db = admin.firestore();
+  let userId;
+  let isNewUser = false;
+
   try {
-    const newUserRecord = await admin.auth().createUser({
-      email, password, displayName: fullName, emailVerified: true,
+    // 3. Check if user exists
+    try {
+        const userRecord = await admin.auth().getUserByEmail(email);
+        userId = userRecord.uid;
+        console.log(`User ${email} already exists. Adding membership.`);
+    } catch (e) {
+        if (e.code === 'auth/user-not-found') {
+            // Create New User
+            const newUserRecord = await admin.auth().createUser({
+                email, 
+                password, 
+                displayName: fullName, 
+                emailVerified: true,
+            });
+            userId = newUserRecord.uid;
+            isNewUser = true;
+            
+            // Create basic user profile doc
+            await db.collection("users").doc(userId).set({ 
+                name: fullName, 
+                email,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        } else {
+            throw e;
+        }
+    }
+
+    // 4. Check for duplicate membership
+    const memQuery = await db.collection("memberships")
+        .where("userId", "==", userId)
+        .where("companyId", "==", companyId)
+        .get();
+
+    if (!memQuery.empty) {
+        return { status: "success", message: "User is already in this company." };
+    }
+
+    // 5. Add Membership
+    // Note: The 'onMembershipWrite' trigger will automatically sync Claims
+    await db.collection("memberships").add({ 
+        userId, 
+        companyId, 
+        role,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
-    const newUserId = newUserRecord.uid;
 
-    await admin.firestore().collection("users").doc(newUserId).set({ name: fullName, email });
-    await admin.firestore().collection("memberships").add({ userId: newUserId, companyId, role });
-    await admin.auth().setCustomUserClaims(newUserId, { roles: newRoleClaims });
+    // If it was an existing user, we didn't set the password, so let the caller know
+    const msg = isNewUser 
+        ? "User created successfully." 
+        : "User already existed. Added to company (Password unchanged).";
 
-    return { status: "success", message: "User created." };
+    return { status: "success", message: msg, userId };
+
   } catch (error) {
+    console.error("Create User Error:", error);
     throw new HttpsError("internal", error.message);
   }
 });
 
-// --- EXPORT 2: Delete Portal User ---
+// --- EXPORT 2: Sync Custom Claims (Trigger) ---
+// This ensures "Regular users also can work with several companies"
+// Whenever a membership is added/modified/deleted, this runs.
+exports.onMembershipWrite = onDocumentWritten("memberships/{membershipId}", async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    
+    // Get the affected User ID
+    const userId = after ? after.userId : before?.userId;
+    if (!userId) return;
+
+    const db = admin.firestore();
+    
+    // 1. Fetch all memberships for this user
+    const memSnap = await db.collection("memberships").where("userId", "==", userId).get();
+    
+    // 2. Fetch User Profile to check for global roles (like super_admin)
+    // We assume global roles might be stored on the user doc or previously set manually. 
+    // Ideally, super_admin should be stored in a separate secure way, but for this app structure:
+    // We rebuild the claims map entirely from the memberships.
+    
+    let newClaims = { roles: {} };
+    
+    // Preserve existing globalRole if it exists (e.g. set manually via script)
+    try {
+        const userRecord = await admin.auth().getUser(userId);
+        const existingClaims = userRecord.customClaims || {};
+        if (existingClaims.roles && existingClaims.roles.globalRole) {
+            newClaims.roles.globalRole = existingClaims.roles.globalRole;
+        }
+    } catch (e) {
+        console.error("Error fetching user for claims sync:", e);
+    }
+
+    // 3. Build Roles Map
+    memSnap.forEach(doc => {
+        const m = doc.data();
+        if (m.companyId && m.role) {
+            newClaims.roles[m.companyId] = m.role;
+        }
+    });
+
+    // 4. Update Auth
+    await admin.auth().setCustomUserClaims(userId, newClaims);
+    console.log(`Synced claims for user ${userId}:`, newClaims);
+});
+
+// --- EXPORT 3: Delete Portal User ---
 exports.deletePortalUser = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
   
@@ -127,6 +226,7 @@ exports.deletePortalUser = onCall(async (request) => {
     await admin.auth().deleteUser(userId);
     await db.collection("users").doc(userId).delete();
 
+    // Delete memberships (Trigger will run, but user is gone, so it will just fail gracefully)
     const membershipsSnap = await db.collection("memberships").where("userId", "==", userId).get();
     const batch = db.batch();
     membershipsSnap.forEach((doc) => {
@@ -145,7 +245,7 @@ exports.deletePortalUser = onCall(async (request) => {
   }
 });
 
-// --- EXPORT 3: Delete Company ---
+// --- EXPORT 4: Delete Company ---
 exports.deleteCompany = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
   
@@ -171,7 +271,7 @@ exports.deleteCompany = onCall(async (request) => {
   }
 });
 
-// --- EXPORT 4: Get Company Profile ---
+// --- EXPORT 5: Get Company Profile ---
 exports.getCompanyProfile = onCall((request) => {
   const companyId = request.data.companyId;
   if (!companyId) return null;
@@ -179,16 +279,26 @@ exports.getCompanyProfile = onCall((request) => {
     .then(doc => (doc.exists ? doc.data() : null));
 });
 
-// --- EXPORT 5: Move Application ---
+// --- EXPORT 6: Move Application ---
 exports.moveApplication = onCall(async (request) => {
   const { sourceCompanyId, destinationCompanyId, applicationId } = request.data;
   const db = admin.firestore();
-  const sourceRef = db.doc(`companies/${sourceCompanyId}/applications/${applicationId}`);
-  const destRef = db.doc(`companies/${destinationCompanyId}/applications/${applicationId}`);
   
-  const docSnap = await sourceRef.get();
-  if (!docSnap.exists) throw new HttpsError("not-found", "App not found.");
+  // Check paths for both legacy leads and nested applications
+  // Priority: Applications -> Leads
+  let collection = 'applications';
+  let sourceRef = db.doc(`companies/${sourceCompanyId}/applications/${applicationId}`);
   
+  let docSnap = await sourceRef.get();
+  if (!docSnap.exists) {
+      collection = 'leads';
+      sourceRef = db.doc(`companies/${sourceCompanyId}/leads/${applicationId}`);
+      docSnap = await sourceRef.get();
+  }
+  
+  if (!docSnap.exists) throw new HttpsError("not-found", "Record not found.");
+  
+  const destRef = db.doc(`companies/${destinationCompanyId}/${collection}/${applicationId}`);
   const appData = docSnap.data();
   appData.companyId = destinationCompanyId;
   
@@ -200,13 +310,12 @@ exports.moveApplication = onCall(async (request) => {
   return { status: "success", message: "Moved." };
 });
 
-// --- EXPORT 6: Trigger on Company Application ---
+// --- EXPORT 7: Triggers for Driver Profile Sync ---
 exports.onApplicationSubmitted = onDocumentCreated("companies/{companyId}/applications/{applicationId}", async (event) => {
   if (!event.data) return;
   await processDriverData(event.data.data());
 });
 
-// --- EXPORT 7: Trigger on General Lead ---
 exports.onLeadSubmitted = onDocumentCreated("leads/{leadId}", async (event) => {
   if (!event.data) return;
   await processDriverData(event.data.data());
@@ -269,22 +378,16 @@ exports.sendAutomatedEmail = onCall(async (request) => {
     }
 });
 
-// --- EXPORT 9: Distribute Daily Leads (FULL LOGIC) ---
+// --- EXPORT 9: Distribute Daily Leads ---
 exports.distributeDailyLeads = onCall(async (request) => {
-    // 1. Auth Check (Super Admin only)
     if (!request.auth || request.auth.token.roles?.globalRole !== 'super_admin') {
         throw new HttpsError("permission-denied", "Super Admin only.");
     }
 
     const db = admin.firestore();
-    
-    // 2. Fetch Companies
     const companiesSnap = await db.collection("companies").get();
     if (companiesSnap.empty) return { message: "No companies found." };
 
-    // 3. Fetch Recent Leads from Pool
-    // Limit to 200 for now to be safe, ordered by newest.
-    // In production, you might want more sophisticated "unread" logic.
     const leadsSnap = await db.collection("leads")
         .orderBy("createdAt", "desc")
         .limit(200) 
@@ -292,12 +395,11 @@ exports.distributeDailyLeads = onCall(async (request) => {
 
     if (leadsSnap.empty) return { message: "No leads found in pool." };
 
-    const BATCH_SIZE = 450; // Firestore limit is 500
+    const BATCH_SIZE = 450;
     let batch = db.batch();
     let opCount = 0;
     const distributionDetails = [];
 
-    // 4. Distribute
     for (const companyDoc of companiesSnap.docs) {
         const companyId = companyDoc.id;
         const plan = companyDoc.data().planType || 'free';
@@ -309,26 +411,19 @@ exports.distributeDailyLeads = onCall(async (request) => {
             if (sentCount >= limit) break;
 
             const leadData = leadDoc.data();
-            
-            // Destination: companies/{companyId}/leads/{originalLeadId}
-            // Using same ID ensures deduplication (if run multiple times, it just overwrites)
             const destRef = db.collection("companies").doc(companyId).collection("leads").doc(leadDoc.id);
             
             const distData = {
                 ...leadData,
-                isPlatformLead: true, // Tag as SafeHaul lead
+                isPlatformLead: true, 
                 distributedAt: admin.firestore.FieldValue.serverTimestamp(),
                 originalLeadId: leadDoc.id,
-                // We do NOT overwrite status here to preserve "Contacted" states if re-run
             };
 
-            // Use set with merge to create or update without destroying existing local data
             batch.set(destRef, distData, { merge: true });
-            
             sentCount++;
             opCount++;
 
-            // Commit and reset batch if full
             if (opCount >= BATCH_SIZE) {
                 await batch.commit();
                 batch = db.batch();
@@ -338,7 +433,6 @@ exports.distributeDailyLeads = onCall(async (request) => {
         distributionDetails.push(`${companyDoc.data().companyName}: ${sentCount} leads`);
     }
 
-    // Commit remaining
     if (opCount > 0) {
         await batch.commit();
     }
@@ -348,3 +442,40 @@ exports.distributeDailyLeads = onCall(async (request) => {
         details: distributionDetails 
     };
 });
+
+// --- EXPORT 10: Join Team (Public Invite) ---
+exports.joinCompanyTeam = onCall(async (request) => {
+    const { companyId, fullName, email, password } = request.data;
+    
+    // 1. Create or Find User
+    let userId;
+    try {
+        const user = await admin.auth().getUserByEmail(email);
+        userId = user.uid;
+    } catch (e) {
+        if (e.code === 'auth/user-not-found') {
+            const newUser = await admin.auth().createUser({
+                email, password, displayName: fullName, emailVerified: true
+            });
+            userId = newUser.uid;
+            
+            await admin.firestore().collection("users").doc(userId).set({ 
+                name: fullName, email, createdAt: admin.firestore.FieldValue.serverTimestamp() 
+            });
+        } else {
+            throw e;
+        }
+    }
+
+    // 2. Add to Team (Claims trigger will handle permissions)
+    const db = admin.firestore();
+    await db.collection("memberships").add({
+        userId,
+        companyId,
+        role: "hr_user", // Default role for invites
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    return { success: true };
+});
+```json

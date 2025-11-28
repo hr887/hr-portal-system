@@ -6,22 +6,18 @@ import { httpsCallable } from "firebase/functions";
 import { doc, getDoc } from 'firebase/firestore';
 import {
   LogOut,
-  Plus,
-  Building,
-  Users,
-  LayoutDashboard,
-  FileText,
   Building2,
   Search,
   X,
-  Zap,
-  Database
+  Zap
 } from 'lucide-react';
-// --- Custom Hook ---
-import { useSuperAdminData } from '../hooks/useSuperAdminData';
-import { useToast } from './feedback/ToastProvider'; // <-- NEW IMPORT
 
-// Import Views
+// --- Custom Hooks ---
+import { useSuperAdminData } from '../hooks/useSuperAdminData';
+import { useToast } from './feedback/ToastProvider';
+
+// --- Components ---
+import { SuperAdminSidebar } from './admin/SuperAdminSidebar.jsx'; 
 import { DashboardView } from './admin/DashboardView.jsx';
 import { CompaniesView } from './admin/CompaniesView.jsx';
 import { UsersView } from './admin/UsersView.jsx';
@@ -29,7 +25,8 @@ import { CreateView } from './admin/CreateView.jsx';
 import { GlobalSearchResults } from './admin/GlobalSearchResults.jsx';
 import { ApplicationsView } from './admin/ApplicationsView.jsx';
 import { BulkLeadAddingView } from './admin/BulkLeadAddingView.jsx';
-// Import Modals
+
+// --- Modals ---
 import { EditCompanyModal } from './modals/EditCompanyModal.jsx';
 import { DeleteCompanyModal } from './modals/DeleteCompanyModal.jsx';
 import { EditUserModal } from './modals/EditUserModal.jsx';
@@ -37,30 +34,9 @@ import { DeleteUserModal } from './modals/DeleteUserModal.jsx';
 import { ViewCompanyAppsModal } from './modals/ViewCompanyAppsModal.jsx';
 import { ApplicationDetailsModal } from './ApplicationDetailsModal.jsx';
 
-// Navigation Item Component
-function NavItem({ label, icon, isActive, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`
-        flex items-center gap-3 w-full px-4 py-3 rounded-lg text-left font-medium
-        ${
-          isActive
-            ? 'bg-blue-600 text-white shadow-md'
-            : 'text-gray-700 hover:bg-gray-100'
-        }
-        transition-all
-      `}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
 export function SuperAdminDashboard() {
   const { handleLogout } = useData();
-  const { showSuccess, showError, showInfo } = useToast(); // <-- Use Toast
+  const { showSuccess, showError, showInfo } = useToast();
   const [activeView, setActiveView] = useState('dashboard');
 
   // --- 1. Use Custom Hook for Data Logic ---
@@ -204,7 +180,10 @@ export function SuperAdminDashboard() {
         );
       case 'bulk-lead-adding':
         return (
-            <BulkLeadAddingView onDataUpdate={refreshData} />
+            <BulkLeadAddingView 
+                onDataUpdate={refreshData} 
+                onClose={() => setActiveView('dashboard')} // <-- FIX: Handles the close action
+            />
         );
       case 'create':
         return (
@@ -226,7 +205,7 @@ export function SuperAdminDashboard() {
           <div className="container mx-auto p-4 flex justify-between items-center gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-600 rounded-lg text-white">
-                 <Building2 size={24} />
+                  <Building2 size={24} />
               </div>
               <h1 className="text-2xl font-bold text-gray-800">Super Admin</h1>
             </div>
@@ -275,44 +254,14 @@ export function SuperAdminDashboard() {
 
         {/* Main Layout */}
         <div className="container mx-auto p-4 sm:p-8 flex gap-8 items-start">
-          <nav className="w-full sm:w-64 shrink-0 bg-white p-4 rounded-xl shadow-lg border border-gray-200 space-y-2 sticky top-24">
-            <NavItem
-              label="Dashboard"
-              icon={<LayoutDashboard size={20} />}
-              isActive={activeView === 'dashboard' && !isSearching}
-              onClick={() => { setActiveView('dashboard'); setSearchQuery(''); }}
-            />
-            <NavItem
-              label="Companies"
-              icon={<Building size={20} />}
-              isActive={activeView === 'companies' && !isSearching}
-              onClick={() => { setActiveView('companies'); setSearchQuery(''); }}
-            />
-            <NavItem
-              label="Users"
-              icon={<Users size={20} />}
-              isActive={activeView === 'users' && !isSearching}
-              onClick={() => { setActiveView('users'); setSearchQuery(''); }}
-            />
-            <NavItem
-              label="Driver Applications"
-              icon={<FileText size={20} />}
-              isActive={activeView === 'applications' && !isSearching}
-              onClick={() => { setActiveView('applications'); setSearchQuery(''); }}
-            />
-            <NavItem
-              label="Bulk Lead Adding"
-              icon={<Database size={20} />}
-              isActive={activeView === 'bulk-lead-adding' && !isSearching}
-              onClick={() => { setActiveView('bulk-lead-adding'); setSearchQuery(''); }}
-            />
-            <NavItem
-              label="Create New"
-              icon={<Plus size={20} />}
-              isActive={activeView === 'create' && !isSearching}
-              onClick={() => { setActiveView('create'); setSearchQuery(''); }}
-            />
-          </nav>
+          
+          {/* Sidebar Component */}
+          <SuperAdminSidebar 
+            activeView={activeView}
+            setActiveView={setActiveView}
+            isSearching={isSearching}
+            onClearSearch={() => setSearchQuery('')}
+          />
 
           <main className="flex-1 w-full min-w-0">{renderActiveView()}</main>
         </div>

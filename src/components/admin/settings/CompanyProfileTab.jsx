@@ -1,10 +1,9 @@
 // src/components/admin/settings/CompanyProfileTab.jsx
 import React, { useState, useEffect } from 'react';
-import { doc, updateDoc } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from '../../../firebase/config';
-import { Building, Save, Loader2, DollarSign, Clock } from 'lucide-react';
-import { useToast } from '../../feedback/ToastProvider'; // <-- NEW IMPORT
+import { saveCompanySettings } from '../../../firebase/firestore'; // <-- Use the new centralized function
+import { uploadCompanyLogo } from '../../../firebase/storage'; // <-- Use storage helper
+import { Building, Save, Loader2, DollarSign, Clock, Plus, Trash2, HelpCircle } from 'lucide-react';
+import { useToast } from '../../feedback/ToastProvider';
 
 // --- CONSTANTS ---
 const HOME_TIME_OPTIONS = ["Daily", "Weekends", "Weekly", "Bi-Weekly", "Monthly", "OTR"];
@@ -90,6 +89,9 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
     const [compData, setCompData] = useState({});
     const [loading, setLoading] = useState(false);
     const [logoUploading, setLogoUploading] = useState(false);
+    
+    // Custom Questions State
+    const [newQuestion, setNewQuestion] = useState('');
 
     useEffect(() => {
         if (currentCompanyProfile) {
@@ -105,7 +107,8 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
                 dotNumber: currentCompanyProfile.legal?.dotNumber || '',
                 companyLogoUrl: currentCompanyProfile.companyLogoUrl || '',
                 hiringPreferences: currentCompanyProfile.hiringPreferences || {},
-                structuredOffers: currentCompanyProfile.structuredOffers || {}
+                structuredOffers: currentCompanyProfile.structuredOffers || {},
+                customQuestions: currentCompanyProfile.customQuestions || [] // Load existing questions
             });
         }
     }, [currentCompanyProfile]);
@@ -113,15 +116,19 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
     const handleSaveCompany = async () => {
         setLoading(true);
         try {
-            const companyRef = doc(db, "companies", currentCompanyProfile.id);
-            await updateDoc(companyRef, {
+            // Prepare clean payload for the service function
+            const payload = {
                 companyName: compData.companyName,
                 contact: { phone: compData.phone, email: compData.email },
                 address: { street: compData.street, city: compData.city, state: compData.state, zip: compData.zip },
                 legal: { mcNumber: compData.mcNumber, dotNumber: compData.dotNumber },
                 hiringPreferences: compData.hiringPreferences,
-                structuredOffers: compData.structuredOffers
-            });
+                structuredOffers: compData.structuredOffers,
+                customQuestions: compData.customQuestions, // Save questions
+                companyLogoUrl: compData.companyLogoUrl
+            };
+
+            await saveCompanySettings(currentCompanyProfile.id, payload);
             showSuccess('Company settings saved successfully.');
         } catch (error) {
             console.error("Save failed", error);
@@ -134,14 +141,16 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
     const handleLogoUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        
         setLogoUploading(true);
         try {
-            const storagePath = `company_assets/${currentCompanyProfile.id}/logo_${Date.now()}.png`;
-            const fileRef = ref(storage, storagePath);
-            await uploadBytes(fileRef, file);
-            const downloadURL = await getDownloadURL(fileRef);
-            const companyRef = doc(db, "companies", currentCompanyProfile.id);
-            await updateDoc(companyRef, { companyLogoUrl: downloadURL });
+            // Use the centralized storage helper
+            const downloadURL = await uploadCompanyLogo(currentCompanyProfile.id, file);
+            
+            // Save just the URL immediately via the service
+            await saveCompanySettings(currentCompanyProfile.id, { companyLogoUrl: downloadURL });
+            
+            // Update local state
             setCompData(prev => ({ ...prev, companyLogoUrl: downloadURL }));
             showSuccess("Logo uploaded successfully!");
         } catch (error) {
@@ -166,6 +175,23 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
         }));
     };
 
+    // --- Custom Question Handlers ---
+    const addQuestion = () => {
+        if (!newQuestion.trim()) return;
+        setCompData(prev => ({
+            ...prev,
+            customQuestions: [...(prev.customQuestions || []), newQuestion.trim()]
+        }));
+        setNewQuestion('');
+    };
+
+    const removeQuestion = (index) => {
+        setCompData(prev => ({
+            ...prev,
+            customQuestions: prev.customQuestions.filter((_, i) => i !== index)
+        }));
+    };
+
     return (
         <div className="space-y-8 max-w-4xl animate-in fade-in">
             <div className="border-b border-gray-200 pb-4 mb-6">
@@ -177,6 +203,7 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
                 <div className="w-24 h-24 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-200 overflow-hidden shrink-0">
                     {compData.companyLogoUrl ? <img src={compData.companyLogoUrl} alt="Logo" className="w-full h-full object-contain" /> : <Building className="text-gray-400" size={32} />}
                 </div>
+                
                 <div>
                     <h4 className="font-semibold text-gray-900">Company Logo</h4>
                     <p className="text-xs text-gray-500 mb-3">Recommended size: 400x400px. PNG or JPG.</p>
@@ -190,6 +217,46 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Company Name</label><input type="text" value={compData.companyName || ''} onChange={(e) => setCompData({ ...compData, companyName: e.target.value })} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">MC Number</label><input type="text" value={compData.mcNumber || ''} onChange={(e) => setCompData({ ...compData, mcNumber: e.target.value })} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
+            </div>
+
+            {/* --- CUSTOM QUESTIONS SECTION --- */}
+            <div className="mt-8 border-t border-gray-200 pt-8">
+                <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+                    <HelpCircle size={20} className="text-blue-600"/> Custom Application Questions
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">Add specific questions for drivers to answer when applying to your company (e.g. "Do you have flatbed experience?").</p>
+                
+                <div className="space-y-3 mb-4">
+                    {compData.customQuestions?.map((q, i) => (
+                        <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                            <span className="flex-1 text-sm font-medium text-gray-700">{q}</span>
+                            <button onClick={() => removeQuestion(i)} className="text-red-500 hover:text-red-700 p-1">
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
+                    ))}
+                    {(!compData.customQuestions || compData.customQuestions.length === 0) && (
+                        <p className="text-sm text-gray-400 italic">No custom questions added yet.</p>
+                    )}
+                </div>
+
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        placeholder="Type a new question..."
+                        value={newQuestion}
+                        onChange={(e) => setNewQuestion(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addQuestion())}
+                    />
+                    <button 
+                        type="button"
+                        onClick={addQuestion}
+                        className="px-4 py-2 bg-blue-100 text-blue-700 font-bold rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-2"
+                    >
+                        <Plus size={18} /> Add
+                    </button>
+                </div>
             </div>
 
             <div className="mt-8 border-t border-gray-200 pt-8">

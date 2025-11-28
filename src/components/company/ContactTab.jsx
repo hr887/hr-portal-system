@@ -1,45 +1,82 @@
 // src/components/company/ContactTab.jsx
 import React, { useState } from 'react';
-import { Mail, MessageSquare, Send, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Mail, MessageSquare, Send, Loader2, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react';
 import { logActivity } from '../../utils/activityLogger';
+import { normalizePhone } from '../../utils/helpers'; // Assuming this helper exists, if not I'll define it locally or use simple regex
 
 export function ContactTab({ companyId, recordId, collectionName, email, phone }) {
-    const [activeMethod, setActiveMethod] = useState('email'); // 'email' or 'sms'
+    const [activeMethod, setActiveMethod] = useState('email'); // 'email', 'sms', 'telegram'
     const [message, setMessage] = useState('');
     const [subject, setSubject] = useState('');
     const [sending, setSending] = useState(false);
     const [success, setSuccess] = useState(false);
 
+    // Helper to clean phone for Telegram link (e.g. +1234567890)
+    const getTelegramLink = (rawPhone) => {
+        if (!rawPhone) return '';
+        // Remove all non-digit characters
+        let digits = rawPhone.replace(/\D/g, '');
+        
+        // If it starts with 1 (US country code) and length is 11, keep it. 
+        // If length is 10, assume US and add 1.
+        if (digits.length === 10) digits = '1' + digits;
+        
+        return `https://t.me/+${digits}`;
+    };
+
     const handleSend = async (e) => {
         e.preventDefault();
         setSending(true);
         
-        // NOTE: To send real emails, we would trigger a Cloud Function here.
-        // For now, we will simulate the send and Log the Activity.
-        
         try {
-            // 1. Simulate API delay
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            if (activeMethod === 'telegram') {
+                // TELEGRAM LOGIC
+                const link = getTelegramLink(phone);
+                if (!link) {
+                    alert("Invalid phone number for Telegram.");
+                    setSending(false);
+                    return;
+                }
+                
+                // Open Telegram in new tab
+                window.open(link, '_blank');
 
-            // 2. Log the "Sent" activity
-            const actionType = activeMethod === 'email' ? 'Email Sent' : 'SMS Sent';
-            const detailText = activeMethod === 'email' 
-                ? `Subject: ${subject}\nTo: ${email}` 
-                : `To: ${phone}\nMessage: ${message}`;
+                // Log Activity
+                await logActivity(
+                    companyId, 
+                    collectionName, 
+                    recordId, 
+                    'Telegram Opened', 
+                    `Opened Telegram chat for ${phone}`,
+                    'communication'
+                );
+                
+                setSuccess(true); // Show success state immediately for UX
+            } else {
+                // EMAIL / SMS LOGIC (Simulated)
+                // 1. Simulate API delay
+                await new Promise(resolve => setTimeout(resolve, 1000));
 
-            await logActivity(
-                companyId, 
-                collectionName, 
-                recordId, 
-                actionType, 
-                detailText,
-                'communication'
-            );
+                // 2. Log the "Sent" activity
+                const actionType = activeMethod === 'email' ? 'Email Sent' : 'SMS Sent';
+                const detailText = activeMethod === 'email' 
+                    ? `Subject: ${subject}\nTo: ${email}` 
+                    : `To: ${phone}\nMessage: ${message}`;
+
+                await logActivity(
+                    companyId, 
+                    collectionName, 
+                    recordId, 
+                    actionType, 
+                    detailText,
+                    'communication'
+                );
+                setSuccess(true);
+            }
 
             // 3. Reset form
             setMessage('');
             setSubject('');
-            setSuccess(true);
             setTimeout(() => setSuccess(false), 3000);
 
         } catch (error) {
@@ -53,18 +90,24 @@ export function ContactTab({ companyId, recordId, collectionName, email, phone }
     return (
         <div className="space-y-6 h-full flex flex-col">
             {/* Toggle */}
-            <div className="flex bg-gray-100 p-1 rounded-lg shrink-0">
+            <div className="flex bg-gray-100 p-1 rounded-lg shrink-0 overflow-x-auto">
                 <button 
                     onClick={() => setActiveMethod('email')}
-                    className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${activeMethod === 'email' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    className={`flex-1 py-2 px-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all whitespace-nowrap ${activeMethod === 'email' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                     <Mail size={16} /> Email
                 </button>
                 <button 
                     onClick={() => setActiveMethod('sms')}
-                    className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${activeMethod === 'sms' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    className={`flex-1 py-2 px-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all whitespace-nowrap ${activeMethod === 'sms' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                     <MessageSquare size={16} /> SMS
+                </button>
+                <button 
+                    onClick={() => setActiveMethod('telegram')}
+                    className={`flex-1 py-2 px-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all whitespace-nowrap ${activeMethod === 'telegram' ? 'bg-white text-blue-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                    <Send size={16} className="rotate-[-45deg] mb-1" /> Telegram
                 </button>
             </div>
 
@@ -75,13 +118,17 @@ export function ContactTab({ companyId, recordId, collectionName, email, phone }
                         <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
                             <CheckCircle size={32} />
                         </div>
-                        <h3 className="text-xl font-bold text-gray-800">Sent Successfully</h3>
-                        <p className="text-gray-500 mt-2">The communication has been logged to Activity History.</p>
+                        <h3 className="text-xl font-bold text-gray-800">
+                            {activeMethod === 'telegram' ? 'Telegram Opened' : 'Sent Successfully'}
+                        </h3>
+                        <p className="text-gray-500 mt-2">The activity has been logged to History.</p>
                         <button onClick={() => setSuccess(false)} className="mt-6 text-blue-600 font-semibold hover:underline">Send another</button>
                     </div>
                 ) : (
                     <form onSubmit={handleSend} className="flex flex-col h-full gap-4">
-                        {activeMethod === 'email' ? (
+                        
+                        {/* --- EMAIL VIEW --- */}
+                        {activeMethod === 'email' && (
                             <>
                                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-sm text-blue-800">
                                     <span className="font-bold">To:</span> {email || 'No email provided'}
@@ -97,36 +144,76 @@ export function ContactTab({ companyId, recordId, collectionName, email, phone }
                                         disabled={!email}
                                     />
                                 </div>
-                            </>
-                        ) : (
-                            <div className="bg-purple-50 border border-purple-100 p-3 rounded-lg text-sm text-purple-800">
-                                <span className="font-bold">To:</span> {phone || 'No phone provided'}
-                                <div className="mt-1 text-xs opacity-75 flex items-center gap-1">
-                                    <AlertCircle size={10} /> SMS functionality Coming Soon
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Message</label>
+                                    <textarea 
+                                        className="w-full h-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                                        placeholder="Type your email message here..."
+                                        value={message}
+                                        onChange={e => setMessage(e.target.value)}
+                                        required
+                                        disabled={!email}
+                                    ></textarea>
                                 </div>
-                            </div>
+                            </>
                         )}
 
-                        <div className="flex-1">
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Message</label>
-                            <textarea 
-                                className="w-full h-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                                placeholder={`Type your ${activeMethod} message here...`}
-                                value={message}
-                                onChange={e => setMessage(e.target.value)}
-                                required
-                                disabled={activeMethod === 'sms' || (!email && activeMethod === 'email')}
-                            ></textarea>
-                        </div>
+                        {/* --- SMS VIEW --- */}
+                        {activeMethod === 'sms' && (
+                            <>
+                                <div className="bg-purple-50 border border-purple-100 p-3 rounded-lg text-sm text-purple-800">
+                                    <span className="font-bold">To:</span> {phone || 'No phone provided'}
+                                    <div className="mt-1 text-xs opacity-75 flex items-center gap-1">
+                                        <AlertCircle size={10} /> SMS functionality Coming Soon
+                                    </div>
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Message</label>
+                                    <textarea 
+                                        className="w-full h-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none resize-none"
+                                        placeholder="Type your SMS message here..."
+                                        value={message}
+                                        onChange={e => setMessage(e.target.value)}
+                                        required
+                                        disabled={true} 
+                                    ></textarea>
+                                </div>
+                            </>
+                        )}
+
+                        {/* --- TELEGRAM VIEW --- */}
+                        {activeMethod === 'telegram' && (
+                            <div className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-200 rounded-xl bg-blue-50/30">
+                                <div className="w-16 h-16 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mb-4">
+                                    <Send size={32} className="rotate-[-45deg] mr-1 mt-1" />
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-800 mb-2">Send via Telegram</h3>
+                                
+                                {phone ? (
+                                    <>
+                                        <p className="text-center text-gray-600 text-sm mb-6 max-w-xs">
+                                            This will open a chat with <strong>{phone}</strong> in your Telegram app.
+                                        </p>
+                                        <div className="bg-white p-3 rounded-lg border border-gray-200 text-sm font-mono text-gray-700 mb-6">
+                                            {getTelegramLink(phone)}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <p className="text-red-500 font-medium">No phone number available for this driver.</p>
+                                )}
+                            </div>
+                        )}
 
                         <div className="flex justify-end">
                             <button 
                                 type="submit"
-                                disabled={sending || (activeMethod === 'sms') || (!email && activeMethod === 'email')}
-                                className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md disabled:opacity-50 flex items-center gap-2"
+                                disabled={sending || (activeMethod === 'sms') || (!email && activeMethod === 'email') || (!phone && activeMethod === 'telegram')}
+                                className={`px-6 py-3 text-white font-bold rounded-xl shadow-md disabled:opacity-50 flex items-center gap-2 transition-all
+                                    ${activeMethod === 'telegram' ? 'bg-[#24A1DE] hover:bg-[#1A8LB5]' : 'bg-blue-600 hover:bg-blue-700'}
+                                `}
                             >
-                                {sending ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-                                Send {activeMethod === 'email' ? 'Email' : 'SMS'}
+                                {sending ? <Loader2 className="animate-spin" size={18} /> : (activeMethod === 'telegram' ? <ExternalLink size={18}/> : <Send size={18} />)}
+                                {activeMethod === 'telegram' ? 'Open Telegram' : `Send ${activeMethod === 'email' ? 'Email' : 'SMS'}`}
                             </button>
                         </div>
                     </form>

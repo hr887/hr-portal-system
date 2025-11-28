@@ -15,6 +15,8 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
+// --- USER & AUTH HELPERS ---
+
 /**
  * Fetches the portal user's data from the 'users' collection.
  * @param {string} userId - The Firebase Auth User ID.
@@ -34,8 +36,8 @@ export async function getPortalUser(userId) {
 
 /**
  * Updates data for a specific user in the 'users' collection.
- * @param {string} userId - The ID of the user to update.
- * @param {object} data - An object containing the fields to update (e.g., { name: "New Name" }).
+ * @param {string} userId 
+ * @param {object} data 
  */
 export async function updateUser(userId, data) {
     if (!userId) return;
@@ -44,27 +46,30 @@ export async function updateUser(userId, data) {
 }
 
 /**
- * Loads all users from the 'users' collection.
- * (Super Admin only)
- * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
+ * Loads all users from the 'users' collection. (Super Admin only)
  */
 export async function loadAllUsers() {
     return await getDocs(collection(db, "users"));
 }
 
 /**
- * Loads all memberships from the 'memberships' collection. (Super Admin only)
- * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
+ * Fetches user documents based on a list of user IDs.
  */
+export async function getUsersFromIds(userIds) {
+    if (!userIds || userIds.length === 0) {
+        return null;
+    }
+    const userRef = collection(db, "users");
+    const q = query(userRef, where(documentId(), "in", userIds));
+    return await getDocs(q);
+}
+
+// --- MEMBERSHIP MANAGEMENT ---
+
 export async function loadAllMemberships() {
     return await getDocs(collection(db, "memberships"));
 }
 
-/**
- * Fetches all memberships for a specific user.
- * @param {string} userId - The ID of the user.
- * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
- */
 export async function getMembershipsForUser(userId) {
     if (!userId) return null;
     const membershipsRef = collection(db, "memberships");
@@ -72,13 +77,14 @@ export async function getMembershipsForUser(userId) {
     return await getDocs(q);
 }
 
-/**
- * Creates a new membership document.
- * @param {object} membershipData - { userId, companyId, role }
- * @returns {Promise<DocumentReference>}
- */
+export async function getMembershipsForCompany(companyId) {
+    if (!companyId) return null;
+    const membershipsRef = collection(db, "memberships");
+    const q = query(membershipsRef, where("companyId", "==", companyId));
+    return await getDocs(q);
+}
+
 export async function addMembership(membershipData) {
-    // Check if this membership already exists
     const q = query(
         collection(db, "memberships"),
         where("userId", "==", membershipData.userId),
@@ -88,61 +94,53 @@ export async function addMembership(membershipData) {
     if (!existing.empty) {
         throw new Error("User is already a member of this company.");
     }
-    // If not, add it
     return await addDoc(collection(db, "memberships"), membershipData);
 }
 
-/**
- * Updates the role on a specific membership document.
- * @param {string} membershipId - The ID of the membership document.
- * @param {string} newRole - The new role (e.g., "company_admin").
- */
 export async function updateMembershipRole(membershipId, newRole) {
     if (!membershipId) return;
     const membershipRef = doc(db, "memberships", membershipId);
     return await updateDoc(membershipRef, { role: newRole });
 }
 
-/**
- * Deletes a specific membership document.
- * @param {string} membershipId - The ID of the membership document to delete.
- */
 export async function deleteMembership(membershipId) {
     if (!membershipId) return;
     const membershipRef = doc(db, "memberships", membershipId);
     return await deleteDoc(membershipRef);
 }
 
+// --- COMPANY MANAGEMENT ---
 
-/**
- * Loads all companies from the 'companies' collection.
- * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
- */
 export async function loadCompanies() {
     return await getDocs(collection(db, "companies"));
 }
 
-/**
- * Fetches specific company profiles based on a list of IDs.
- * @param {string[]} companyIds - An array of company document IDs.
- * @returns {Promise<QuerySnapshot>} The Firestore QuerySnapshot.
- */
 export async function getCompaniesFromIds(companyIds) {
-    if (!companyIds || companyIds.length === 0) {
-        return null;
-    }
+    if (!companyIds || companyIds.length === 0) return null;
     const companyRef = collection(db, "companies");
     const q = query(companyRef, where(documentId(), "in", companyIds));
     return await getDocs(q);
 }
 
 /**
- * Creates a new company document in the 'companies' collection.
- * @param {object} companyData - The structured company data from the form.
- * @returns {Promise<DocumentReference>} The reference to the newly created document.
+ * Fetches the company profile via Cloud Function (secure).
+ */
+export async function getCompanyProfile(companyId) {
+    if (!companyId) return null;
+    try {
+        const getProfile = httpsCallable(functions, 'getCompanyProfile');
+        const result = await getProfile({ companyId: companyId });
+        return result.data;
+    } catch (error) {
+        console.error(`Error calling getCompanyProfile function for ${companyId}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Creates a new company document. Checks for unique slug.
  */
 export async function createNewCompany(companyData) {
-    // Add a check for uniqueness of the appSlug
     const slugQuery = query(collection(db, "companies"), where("appSlug", "==", companyData.appSlug));
     const slugSnapshot = await getDocs(slugQuery);
     
@@ -154,30 +152,20 @@ export async function createNewCompany(companyData) {
 }
 
 /**
- * Updates an existing company document.
- * @param {string} companyId - The ID of the company document to update.
- * @param {object} companyData - The updated company data object.
- * @param {string} originalSlug - The original slug to check against.
+ * Updates basic company info. Checks for unique slug if changed.
  */
 export async function updateCompany(companyId, companyData, originalSlug) {
-    // If the slug hasn't changed, just update the document
-    if (companyData.appSlug === originalSlug) {
-        const companyRef = doc(db, "companies", companyId);
-        return await updateDoc(companyRef, companyData);
-    }
-    
-    // If slug *has* changed, we must check for uniqueness first
-    const slugQuery = query(collection(db, "companies"), where("appSlug", "==", companyData.appSlug));
-    const slugSnapshot = await getDocs(slugQuery);
-    
-    if (!slugSnapshot.empty) {
+    // If slug is changing, verify uniqueness
+    if (companyData.appSlug && originalSlug && companyData.appSlug !== originalSlug) {
+        const slugQuery = query(collection(db, "companies"), where("appSlug", "==", companyData.appSlug));
+        const slugSnapshot = await getDocs(slugQuery);
+        
         let isSameDoc = false;
         slugSnapshot.forEach(doc => {
-            if (doc.id === companyId) {
-                isSameDoc = true;
-            }
+            if (doc.id === companyId) isSameDoc = true;
         });
-        if (!isSameDoc) {
+        
+        if (!slugSnapshot.empty && !isSameDoc) {
              throw new Error(`The URL Slug "${companyData.appSlug}" is already taken. Please choose a unique one.`);
         }
     }
@@ -187,28 +175,31 @@ export async function updateCompany(companyId, companyData, originalSlug) {
 }
 
 /**
- * Fetches the company profile by calling a secure Cloud Function.
- * @param {string} companyId - The company's document ID.
- * @returns {Promise<object|null>} The company's data object or null.
+ * Specific function to save Company Settings (Profile Tab).
+ * This handles custom questions and other preferences.
  */
-export async function getCompanyProfile(companyId) {
-    if (!companyId) return null;
-    try {
-        const getProfile = httpsCallable(functions, 'getCompanyProfile');
-        const result = await getProfile({ companyId: companyId });
-        return result.data;
-        // This is the company data object
-    } catch (error) {
-        console.error(`Error calling getCompanyProfile function for ${companyId}:`, error);
-        return null;
-    }
+export async function saveCompanySettings(companyId, settingsData) {
+    if (!companyId) throw new Error("Missing Company ID");
+    const companyRef = doc(db, "companies", companyId);
+    
+    // We strictly define what can be updated here for safety
+    const payload = {};
+    if (settingsData.companyName) payload.companyName = settingsData.companyName;
+    if (settingsData.contact) payload.contact = settingsData.contact;
+    if (settingsData.address) payload.address = settingsData.address;
+    if (settingsData.legal) payload.legal = settingsData.legal;
+    if (settingsData.hiringPreferences) payload.hiringPreferences = settingsData.hiringPreferences;
+    if (settingsData.structuredOffers) payload.structuredOffers = settingsData.structuredOffers;
+    if (settingsData.customQuestions) payload.customQuestions = settingsData.customQuestions;
+    if (settingsData.companyLogoUrl) payload.companyLogoUrl = settingsData.companyLogoUrl;
+
+    return await updateDoc(companyRef, payload);
 }
 
-
-// --- Company Admin Functions ---
+// --- APPLICATION & LEAD MANAGEMENT ---
 
 /**
- * Fetches applications *only* from the NESTED path.
+ * Fetches applications from the NESTED path: companies/{id}/applications
  */
 export async function loadApplications(companyId) {
     if (!companyId) {
@@ -232,7 +223,33 @@ export async function loadApplications(companyId) {
 }
 
 /**
- * Gets a specific application.
+ * Fetch "Platform Leads" (and company imported leads)
+ */
+export async function loadCompanyLeads(companyId) {
+    if (!companyId) return [];
+    
+    const leadsRef = collection(db, "companies", companyId, "leads");
+    const q = query(leadsRef, orderBy("createdAt", "desc"));
+    
+    try {
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                // Default to true if missing (legacy data), else use the flag
+                isPlatformLead: data.isPlatformLead !== false 
+            };
+        });
+    } catch (error) {
+        console.error("Error loading leads:", error);
+        return [];
+    }
+}
+
+/**
+ * Gets a specific application doc.
  */
 export async function getApplicationDoc(companyId, applicationId) {
     const docRef = doc(db, "companies", companyId, "applications", applicationId);
@@ -240,32 +257,25 @@ export async function getApplicationDoc(companyId, applicationId) {
 }
 
 /**
- * Updates the status of a specific application.
+ * Updates fields in a specific application or lead document.
+ * Handles checking both collections if the specific type isn't known, 
+ * but prefers precise targeting.
  */
-export async function updateApplicationStatus(companyId, applicationId, newStatus) {
-    const docRef = doc(db, "companies", companyId, "applications", applicationId);
-    await updateDoc(docRef, { status: newStatus });
-}
-
-/**
- * Updates fields in a specific application document.
- */
-export async function updateApplicationData(companyId, applicationId, data) {
-    const docRef = doc(db, "companies", companyId, "applications", applicationId);
+export async function updateApplicationData(companyId, applicationId, data, collectionName = 'applications') {
+    const docRef = doc(db, "companies", companyId, collectionName, applicationId);
     return await updateDoc(docRef, data);
 }
 
-/**
- * Deletes a specific application document.
- */
-export async function deleteApplication(companyId, applicationId) {
-    const docRef = doc(db, "companies", companyId, "applications", applicationId);
+export async function updateApplicationStatus(companyId, applicationId, newStatus, collectionName = 'applications') {
+    const docRef = doc(db, "companies", companyId, collectionName, applicationId);
+    await updateDoc(docRef, { status: newStatus });
+}
+
+export async function deleteApplication(companyId, applicationId, collectionName = 'applications') {
+    const docRef = doc(db, "companies", companyId, collectionName, applicationId);
     return await deleteDoc(docRef);
 }
 
-/**
- * Calls a Cloud Function to move an application.
- */
 export async function moveApplication(sourceCompanyId, destinationCompanyId, applicationId) {
     if (!sourceCompanyId || !destinationCompanyId || !applicationId) {
         throw new Error("Missing parameters for moving application.");
@@ -280,73 +290,11 @@ export async function moveApplication(sourceCompanyId, destinationCompanyId, app
     });
 }
 
+// --- INTERNAL NOTES ---
 
-// --- Team Management Functions ---
-
-/**
- * Fetches all memberships for a specific company.
- */
-export async function getMembershipsForCompany(companyId) {
-    if (!companyId) return null;
-    const membershipsRef = collection(db, "memberships");
-    const q = query(membershipsRef, where("companyId", "==", companyId));
-    return await getDocs(q);
-}
-
-/**
- * Fetches user documents based on a list of user IDs.
- */
-export async function getUsersFromIds(userIds) {
-    if (!userIds || userIds.length === 0) {
-        return null;
-    }
-    const userRef = collection(db, "users");
-    const q = query(userRef, where(documentId(), "in", userIds));
-    return await getDocs(q);
-}
-
-
-// --- Platform Leads Functions ---
-
-/**
- * Fetch "Platform Leads" for a specific company.
- */
-export async function loadCompanyLeads(companyId) {
-    if (!companyId) return [];
-    
-    const leadsRef = collection(db, "companies", companyId, "leads");
-    const q = query(leadsRef, orderBy("createdAt", "desc"));
-    
-    try {
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => {
-            const data = doc.data();
-            // We use the boolean if it exists, otherwise assume true (legacy)
-            // But for new uploads, the upload script sets isPlatformLead: false explicitly.
-            return {
-                id: doc.id,
-                ...data,
-                // If isPlatformLead is missing, assume true (legacy behavior)
-                // If it exists, respect it (false for company uploads, true for super admin distribution)
-                isPlatformLead: data.isPlatformLead !== false 
-            };
-        });
-    } catch (error) {
-        console.error("Error loading leads:", error);
-        return [];
-    }
-}
-
-// --- INTERNAL NOTES (HR ONLY) ---
-
-/**
- * Fetch internal notes for a specific application.
- */
-export async function getApplicationNotes(companyId, applicationId) {
-    const notesRef = collection(db, "companies", companyId, "applications", applicationId, "internal_notes");
-    // Order by newest first
+export async function getApplicationNotes(companyId, applicationId, collectionName = 'applications') {
+    const notesRef = collection(db, "companies", companyId, collectionName, applicationId, "internal_notes");
     const q = query(notesRef, orderBy("createdAt", "desc"));
-    
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({
         id: doc.id,
@@ -354,11 +302,10 @@ export async function getApplicationNotes(companyId, applicationId) {
     }));
 }
 
-/**
- * Add a new internal note.
- */
-export async function addApplicationNote(companyId, applicationId, noteText, authorName) {
-    const notesRef = collection(db, "companies", companyId, "applications", applicationId, "internal_notes");
+export async function addApplicationNote(companyId, applicationId, noteText, authorName, collectionName = 'applications') {
+    const notesRef = collection(db, "companies", companyId, collectionName, applicationId, "internal_notes");
+    // Dynamically import serverTimestamp only when needed to avoid issues
+    const { serverTimestamp } = await import("firebase/firestore"); 
     await addDoc(notesRef, {
         text: noteText,
         author: authorName,

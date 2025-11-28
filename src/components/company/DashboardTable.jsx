@@ -1,9 +1,8 @@
 // src/components/company/DashboardTable.jsx
 import React, { useState } from 'react';
-import { Search, Phone, ChevronLeft, ChevronRight, Filter, X, MapPin, Truck, Calendar, User } from 'lucide-react';
+import { Search, Phone, ChevronLeft, ChevronRight, Filter, X, MapPin, Truck, Calendar, User, Clock } from 'lucide-react';
 import { getFieldValue, formatPhoneNumber } from '../../utils/helpers';
 
-// UPDATED: Only specific haul types
 const DRIVER_TYPES = [
     "Dry Van", "Reefer", "Flatbed", "Box Truck", "Tanker", "Team"
 ];
@@ -13,6 +12,26 @@ const US_STATES = [
     "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", 
     "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
 ];
+
+// --- Helper for Status Colors ---
+const getStatusBadgeStyles = (status) => {
+    const s = (status || '').toLowerCase();
+    
+    if (s.includes('approved') || s.includes('hired') || s.includes('accepted')) {
+        return 'bg-green-100 text-green-800 border-green-200';
+    }
+    if (s.includes('rejected') || s.includes('disqualified') || s.includes('declined')) {
+        return 'bg-red-100 text-red-800 border-red-200';
+    }
+    if (s.includes('contacted') || s.includes('attempted') || s.includes('awaiting')) {
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    }
+    if (s.includes('offer')) {
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+    }
+    // Default / New / In Review
+    return 'bg-blue-50 text-blue-700 border-blue-200';
+};
 
 export function DashboardTable({
   // Data & State
@@ -53,7 +72,7 @@ export function DashboardTable({
 
   const handleFilterChange = (key, value) => {
       setFilters(prev => ({ ...prev, [key]: value }));
-      setCurrentPage(1); // Reset to page 1 on filter change
+      setCurrentPage(1);
   };
 
   const clearFilters = () => {
@@ -239,32 +258,27 @@ export function DashboardTable({
                   >
                     {/* Name & Phone */}
                     <td className="px-6 py-3.5 align-middle">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border ${isSelected ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-600 border-gray-200 group-hover:bg-white'}`}>
-                          {name.charAt(0)}
+                        <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border shrink-0 ${isSelected ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-600 border-gray-200 group-hover:bg-white'}`}>
+                                {name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-gray-900">{name}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                    <button 
+                                        onClick={(e) => onPhoneClick(e, item)}
+                                        className="text-xs text-gray-500 hover:text-blue-600 hover:underline flex items-center gap-1 transition-colors"
+                                    >
+                                        <Phone size={10} /> {formatPhoneNumber(getFieldValue(item.phone))}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">{name}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <button 
-                              onClick={(e) => onPhoneClick(e, item)}
-                              className="text-xs text-gray-500 hover:text-blue-600 hover:underline flex items-center gap-1 transition-colors"
-                            >
-                              <Phone size={10} /> {formatPhoneNumber(getFieldValue(item.phone))}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
                     </td>
 
                     {/* Status Badge */}
                     <td className="px-6 py-3.5 align-middle">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide border ${
-                        item.status === 'New Lead' || item.status === 'New Application' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                        item.status === 'Contacted' || item.status === 'Attempted' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
-                        item.status === 'Approved' ? 'bg-green-50 text-green-700 border-green-100' :
-                        'bg-gray-50 text-gray-600 border-gray-100'
-                      }`}>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide border ${getStatusBadgeStyles(item.status)}`}>
                         {item.status || 'New'}
                       </span>
                     </td>
