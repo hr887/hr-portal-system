@@ -1,11 +1,9 @@
 // hr portal/functions/hrAdmin.js
 
-const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
-
-const db = admin.firestore();
-const auth = admin.auth();
+// UPDATED: Import from shared singleton
+const { admin, db, auth } = require("./firebaseAdmin");
 
 // --- EXPORT 1: Create Portal User (Handles Existing Users) ---
 exports.createPortalUser = onCall(async (request) => {
@@ -65,6 +63,7 @@ exports.createPortalUser = onCall(async (request) => {
         .where("userId", "==", userId)
         .where("companyId", "==", companyId)
         .get();
+
     if (!memQuery.empty) {
         return { status: "success", message: "User is already in this company." };
     }
@@ -79,10 +78,11 @@ exports.createPortalUser = onCall(async (request) => {
     });
 
     const msg = isNewUser 
-        ? "User created successfully." 
+        ? "User created successfully."
         : "User already existed. Added to company (Password unchanged).";
 
     return { status: "success", message: msg, userId };
+
   } catch (error) {
     console.error("Create User Error:", error);
     throw new HttpsError("internal", error.message);
@@ -170,7 +170,6 @@ exports.joinCompanyTeam = onCall(async (request) => {
         userId = user.uid;
     } catch (e) {
         if (e.code === 'auth/user-not-found') {
-          
             const newUser = await auth.createUser({
                 email, password, displayName: fullName, emailVerified: true
             });
@@ -191,5 +190,6 @@ exports.joinCompanyTeam = onCall(async (request) => {
         role: "hr_user", // Default role for invites
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
+
     return { success: true };
 });

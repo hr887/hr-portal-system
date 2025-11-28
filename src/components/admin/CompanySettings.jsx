@@ -1,11 +1,13 @@
 // src/components/admin/CompanySettings.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useData } from '../../App.jsx';
+// UPDATED: Import from new context file
+import { useData } from '../../context/DataContext';
 import { 
   Building, User, CreditCard, CheckCircle, 
   FileSignature, Blocks, ArrowLeft, Users, Mail
 } from 'lucide-react';
+
 // --- Import Sub-Components ---
 import { CompanyProfileTab } from './settings/CompanyProfileTab';
 import { TeamManagementTab } from './settings/TeamManagementTab';
@@ -73,7 +75,7 @@ export function CompanySettings() {
             return (
                 <PersonalProfileTab 
                     currentUser={currentUser}
-                    currentCompanyProfile={currentCompanyProfile} // <-- UPDATED: Added this prop
+                    currentCompanyProfile={currentCompanyProfile} 
                     onShowSuccess={showSuccess}
                 />
             );
@@ -157,7 +159,7 @@ export function CompanySettings() {
           <main className="flex-1 min-h-[600px] relative">
             {successMsg && (
                 <div className="fixed bottom-8 right-8 bg-green-600 text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-3 animate-in slide-in-from-bottom-5 z-50">
-                    <CheckCircle size={20} /> {successMsg}
+                     <CheckCircle size={20} /> {successMsg}
                 </div>
             )}
             {renderContent()}

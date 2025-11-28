@@ -1,15 +1,5 @@
 // hr portal/functions/index.js
 
-// This file is the entry point, responsible only for setup and exporting modular functions.
-
-const admin = require("firebase-admin");
-
-// Initialize the Firebase Admin App
-// Note: This must happen once at the top level
-admin.initializeApp();
-
-// --- Import and Export Modules ---
-
 // 1. Driver Profile Synchronization (Triggers)
 const driverSync = require("./driverSync");
 exports.onApplicationSubmitted = driverSync.onApplicationSubmitted;
@@ -29,5 +19,3 @@ exports.getCompanyProfile = companyAdmin.getCompanyProfile;
 exports.moveApplication = companyAdmin.moveApplication;
 exports.sendAutomatedEmail = companyAdmin.sendAutomatedEmail;
 exports.distributeDailyLeads = companyAdmin.distributeDailyLeads;
-
-// Note: Ensure your environment has the required dependencies (firebase-admin, nodemailer) and run the deployment script.

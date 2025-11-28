@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { generateApplicationPDF } from '../utils/pdfGenerator.js';
 import { getFieldValue } from '../utils/helpers.js';
-import { useData } from '../App.jsx';
+// UPDATED: Import from new context file
+import { useData } from '../context/DataContext';
 import { useApplicationDetails } from '../hooks/useApplicationDetails';
 import { 
   Download, X, ArrowRight, Edit2, Save, Trash2, 

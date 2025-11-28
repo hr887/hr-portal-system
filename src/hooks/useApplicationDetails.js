@@ -2,15 +2,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { db, storage, auth } from '../firebase/config';
+import { db, storage } from '../firebase/config';
 import { getCompanyProfile } from '../firebase/firestore';
 import { logActivity } from '../utils/activityLogger';
-import { useData } from '../App';
-import { useToast } from '../components/feedback/ToastProvider'; // <-- NEW IMPORT
+// UPDATED: Import from new context file
+import { useData } from '../context/DataContext';
+import { useToast } from '../components/feedback/ToastProvider';
 
 export function useApplicationDetails(companyId, applicationId, onStatusUpdate) {
   const { currentUserClaims } = useData();
-  const { showSuccess, showError } = useToast(); // <-- Use Toast Hook
+  const { showSuccess, showError } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -18,7 +19,6 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
   const [appData, setAppData] = useState(null);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [collectionName, setCollectionName] = useState('applications');
-  
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -41,12 +41,14 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
               const q = query(collection(db, "memberships"), where("companyId", "==", companyId));
               const snap = await getDocs(q);
               const members = [];
+       
               for(const m of snap.docs) {
                   const uSnap = await getDoc(doc(db, "users", m.data().userId));
                   if(uSnap.exists()) members.push({ id: uSnap.id, name: uSnap.data().name });
               }
               setTeamMembers(members);
           } catch(e) {}
+ 
       };
       fetchTeam();
   }, [companyId]);
@@ -77,7 +79,7 @@ export function useApplicationDetails(companyId, applicationId, onStatusUpdate) 
         setAppData(data);
         setCurrentStatus(data.status || 'New Application');
         setAssignedTo(data.assignedTo || '');
-        
+     
         const getUrl = async (fileData) => {
           if (!fileData) return null;
           if (fileData.storagePath) {

@@ -1,10 +1,11 @@
 // src/components/CompanyAdminDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom'; 
-import { useData } from '../App.jsx';
+// UPDATED: Import from new context file
+import { useData } from '../context/DataContext';
 import { auth } from '../firebase/config.js';
 import { getPortalUser } from '../firebase/firestore.js'; 
-import { useToast } from './feedback/ToastProvider'; // <-- NEW IMPORT
+import { useToast } from './feedback/ToastProvider';
 
 // --- CUSTOM HOOKS & COMPONENTS ---
 import { useCompanyDashboard } from '../hooks/useCompanyDashboard';
@@ -24,7 +25,7 @@ import {
 
 export function CompanyAdminDashboard() {
   const { currentCompanyProfile, handleLogout, returnToCompanyChooser, currentUserClaims } = useData();
-  const { showError } = useToast(); // <-- Use Toast Hook
+  const { showError } = useToast();
   const navigate = useNavigate();
   const companyId = currentCompanyProfile?.id;
   const companyName = currentCompanyProfile?.companyName;
@@ -61,7 +62,6 @@ export function CompanyAdminDashboard() {
           window.location.href = `tel:${item.phone}`;
           setCallModalData({ lead: item });
       } else {
-          // Replaced alert with professional toast
           showError("No phone number available for this driver.");
       }
   };
@@ -102,10 +102,10 @@ export function CompanyAdminDashboard() {
 
                 <NotificationBell userId={auth.currentUser?.uid} />
 
-                  <div className="relative ml-2">
+                <div className="relative ml-2">
                     <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="flex items-center gap-2 focus:outline-none">
                         <div className="w-9 h-9 rounded-full bg-gray-100 border border-gray-200 text-gray-600 flex items-center justify-center font-bold text-sm hover:bg-gray-200 transition">
-                             {userName.charAt(0).toUpperCase()}
+                            {userName.charAt(0).toUpperCase()}
                         </div>
                     </button>
                     {isUserMenuOpen && (
@@ -128,7 +128,7 @@ export function CompanyAdminDashboard() {
         </header>
 
         <div className="flex-1 overflow-hidden flex flex-col max-w-[1600px] mx-auto w-full p-4 sm:p-6">
-       
+        
              {/* --- STATS ROW --- */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6 shrink-0">
                  <StatCard 
@@ -138,7 +138,7 @@ export function CompanyAdminDashboard() {
                     active={dashboard.activeTab === 'applications'}
                     colorClass="ring-blue-500 bg-blue-500"
                     onClick={() => dashboard.setActiveTab('applications')}
-                />
+                 />
                <StatCard 
                     title="SafeHaul Leads" 
                     value={dashboard.platformLeads.length} 
@@ -163,7 +163,7 @@ export function CompanyAdminDashboard() {
                     colorClass="ring-green-500 bg-green-500"
                     onClick={() => dashboard.setActiveTab('my_leads')}
                 />
-                 
+                  
                  {/* Leaderboard Widget */}
                  <div className="lg:col-span-1">
                      <PerformanceWidget companyId={companyId} />
@@ -218,7 +218,7 @@ export function CompanyAdminDashboard() {
       {callModalData && <CallOutcomeModal lead={callModalData.lead} companyId={companyId} onClose={() => setCallModalData(null)} onUpdate={dashboard.refreshData} />}
       
       {isUploadModalOpen && isCompanyAdmin && (
-          <CompanyBulkUpload 
+           <CompanyBulkUpload 
             companyId={companyId}
             onClose={() => setIsUploadModalOpen(false)}
             onUploadComplete={dashboard.refreshData}

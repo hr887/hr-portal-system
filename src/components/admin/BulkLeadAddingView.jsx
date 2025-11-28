@@ -52,10 +52,9 @@ export function BulkLeadAddingView({ onDataUpdate, onClose }) {
             }
 
             // B. If not found by email, Check Phone (Normalized)
-            // Note: We check against the formatted phone stored in 'personalInfo.phone' 
-            // If you index 'normalizedPhone' in DB, change this query to match that field.
-            if (!existingDoc && data.phone) {
-                const qPhone = query(driversRef, where("personalInfo.phone", "==", data.phone));
+            // Updated to check against 'personalInfo.normalizedPhone' for accuracy
+            if (!existingDoc && data.normalizedPhone) {
+                const qPhone = query(driversRef, where("personalInfo.normalizedPhone", "==", data.normalizedPhone));
                 const snapPhone = await getDocs(qPhone);
                 if (!snapPhone.empty) existingDoc = snapPhone.docs[0];
             }
@@ -70,10 +69,14 @@ export function BulkLeadAddingView({ onDataUpdate, onClose }) {
                     "lastUpdatedAt": serverTimestamp(),
                     "driverProfile.isBulkUpload": true
                 };
-                
+
                 if(data.firstName) updatePayload["personalInfo.firstName"] = data.firstName;
                 if(data.lastName) updatePayload["personalInfo.lastName"] = data.lastName;
                 if(data.phone) updatePayload["personalInfo.phone"] = data.phone;
+                
+                // Ensure normalized phone is updated/added to existing records
+                if(data.normalizedPhone) updatePayload["personalInfo.normalizedPhone"] = data.normalizedPhone;
+
                 if(data.city) updatePayload["personalInfo.city"] = data.city;
                 if(data.state) updatePayload["personalInfo.state"] = data.state;
                 if(data.experience) updatePayload["qualifications.experienceYears"] = data.experience;
@@ -90,7 +93,8 @@ export function BulkLeadAddingView({ onDataUpdate, onClose }) {
                         firstName: data.firstName,
                         lastName: data.lastName,
                         email: data.email,
-                        phone: data.phone,
+                        phone: data.phone, // Formatted version
+                        normalizedPhone: data.normalizedPhone || '', // Clean version for queries
                         city: data.city,
                         state: data.state,
                         zip: ''

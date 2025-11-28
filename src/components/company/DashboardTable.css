@@ -1,0 +1,34 @@
+/* hr portal/src/components/company/DashboardTable.css */
+
+/* Style for the invisible, draggable handle area - positioned on the right edge of <th> */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px; /* The clickable area width */
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+/* Optional: Provide a slight visual highlight when hovering (a thin blue separator line) */
+.resize-handle:hover,
+.resize-handle:active {
+  /* Background color based on Tailwind blue-500 (RGB: 59, 130, 246) */
+  background-color: rgba(59, 130, 246, 0.2); 
+  /* Use border-right for a clean line visual cue, similar to the spreadsheet image */
+  border-right: 1px solid rgb(59, 130, 246); 
+  opacity: 0.5;
+}
+
+/* Class applied to the entire table when resizing is active */
+.table-fixed-resizing {
+  cursor: col-resize !important;
+  user-select: none; /* Prevents text selection while dragging */
+}
+
+/* Ensure the table cell header is positioned relatively */
+.table-fixed th {
+  position: relative;
+  overflow: hidden; 
+}

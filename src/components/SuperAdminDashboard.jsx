@@ -1,6 +1,7 @@
 // src/components/SuperAdminDashboard.jsx
 import React, { useState } from 'react';
-import { useData } from '../App.jsx';
+// UPDATED: Import from new context file
+import { useData } from '../context/DataContext';
 import { db, functions } from '../firebase/config.js';
 import { httpsCallable } from "firebase/functions";
 import { doc, getDoc } from 'firebase/firestore';
@@ -32,7 +33,7 @@ import { DeleteCompanyModal } from './modals/DeleteCompanyModal.jsx';
 import { EditUserModal } from './modals/EditUserModal.jsx';
 import { DeleteUserModal } from './modals/DeleteUserModal.jsx';
 import { ViewCompanyAppsModal } from './modals/ViewCompanyAppsModal.jsx';
-import { ApplicationDetailsModal } from './ApplicationDetailsModal.jsx';
+import { ApplicationDetailView } from './ApplicationDetailView.jsx';
 
 export function SuperAdminDashboard() {
   const { handleLogout } = useData();
@@ -91,6 +92,7 @@ export function SuperAdminDashboard() {
       showInfo('This is a lead, not a full application. Details can be viewed in the table.');
       return;
     }
+    // Correctly set the object structure for the detail view component
     setSelectedApplication({
       companyId: app.companyId,
       appId: app.id,
@@ -99,7 +101,6 @@ export function SuperAdminDashboard() {
 
   const handleDistributeLeads = async () => {
     if(!window.confirm("Are you sure you want to distribute daily leads to ALL companies based on their plans (50/200)?")) return;
-    
     showInfo("Distribution started. This may take a moment...");
     
     try {
@@ -114,7 +115,8 @@ export function SuperAdminDashboard() {
             showSuccess(result.data.message);
         }
         
-        refreshData(); // Refresh stats
+        refreshData();
+        // Refresh stats
     } catch (e) {
         console.error(e);
         showError("Error distributing leads: " + e.message);
@@ -182,7 +184,7 @@ export function SuperAdminDashboard() {
         return (
             <BulkLeadAddingView 
                 onDataUpdate={refreshData} 
-                onClose={() => setActiveView('dashboard')} // <-- FIX: Handles the close action
+                onClose={() => setActiveView('dashboard')} 
             />
         );
       case 'create':
@@ -197,6 +199,16 @@ export function SuperAdminDashboard() {
     }
   };
 
+  const handlePhoneClick = (e, item) => {
+    if (e) e.stopPropagation();
+    if (item && item.phone) {
+      // Since this is Super Admin, we don't open the Call Modal, just link out or alert.
+      window.location.href = `tel:${item.phone}`;
+    } else {
+      showError("No phone number available for this driver.");
+    }
+  };
+
   return (
     <>
       <div id="super-admin-container" className="min-h-screen bg-gray-50">
@@ -205,7 +217,7 @@ export function SuperAdminDashboard() {
           <div className="container mx-auto p-4 flex justify-between items-center gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-600 rounded-lg text-white">
-                  <Building2 size={24} />
+                <Building2 size={24} />
               </div>
               <h1 className="text-2xl font-bold text-gray-800">Super Admin</h1>
             </div>
@@ -308,11 +320,13 @@ export function SuperAdminDashboard() {
       )}
 
       {selectedApplication && (
-        <ApplicationDetailsModal
+        <ApplicationDetailView
           companyId={selectedApplication.companyId}
           applicationId={selectedApplication.appId}
-          onClose={onModalClose}
+          onClosePanel={onModalClose}
           onStatusUpdate={refreshData}
+          isCompanyAdmin={true} // Super Admin has all admin rights
+          onPhoneClick={handlePhoneClick}
         />
       )}
     </>

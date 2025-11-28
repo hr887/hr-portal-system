@@ -12,9 +12,8 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
   // Assignment State
   const [assignmentMode, setAssignmentMode] = useState('unassigned'); // unassigned, round_robin, specific_user
   const [teamMembers, setTeamMembers] = useState([]);
-  
   // CHANGED: Now an array to support multi-select for Round Robin
-  const [selectedUserIds, setSelectedUserIds] = useState([]); 
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
 
   // Load Team Members for Assignment
   useEffect(() => {
@@ -96,18 +95,17 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
             const leadsRef = collection(db, "companies", companyId, "leads");
             let existingDoc = null;
 
+            // 1. Check by Email
             if (!data.isEmailPlaceholder) {
                 const qEmail = query(leadsRef, where("email", "==", data.email));
                 const snapEmail = await getDocs(qEmail);
                 if (!snapEmail.empty) existingDoc = snapEmail.docs[0];
             }
             
-            // Use the data.normalizedPhone (which was set in useBulkImport) for better matching
-            // But we must query against the stored 'normalizedPhone' field in DB if it exists, 
-            // OR if you haven't migrated DB data yet, we query 'phone' with the formatted version.
-            // Assuming we query 'phone' (formatted) for now based on your previous structure:
-            if (!existingDoc && data.phone) {
-                const qPhone = query(leadsRef, where("phone", "==", data.phone));
+            // 2. Check by Normalized Phone (Robust Duplicate Check)
+            if (!existingDoc && data.normalizedPhone) {
+                // We check against the stored 'normalizedPhone' field
+                const qPhone = query(leadsRef, where("normalizedPhone", "==", data.normalizedPhone));
                 const snapPhone = await getDocs(qPhone);
                 if (!snapPhone.empty) existingDoc = snapPhone.docs[0];
             }
@@ -155,11 +153,10 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
                 createdCount++;
             } else {
                 // UPDATE EXISTING LEAD
-                // Only update assignment if it was unassigned? Or overwrite? 
-                // Typically imports don't steal leads unless specified. Keeping existing assignment logic safe.
+                // We typically don't change assignment on update to avoid disrupting active work
                 const docRef = doc(db, "companies", companyId, "leads", existingDoc.id);
                 currentBatch.update(docRef, leadPayload);
-                
+
                 // Activity Log: Updated
                 const logRef = collection(db, "companies", companyId, "leads", existingDoc.id, "activity_logs");
                 const logDoc = doc(logRef);
@@ -189,7 +186,6 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
 
         setStats({ created: createdCount, updated: updatedCount });
         setStep('success');
-        
         setTimeout(() => {
             if (onUploadComplete) onUploadComplete();
         }, 1500);
@@ -209,7 +205,7 @@ export function useCompanyLeadUpload(companyId, onUploadComplete) {
       step, setStep,
       assignmentMode, setAssignmentMode,
       teamMembers,
-      selectedUserIds, setSelectedUserIds, // Updated export
+      selectedUserIds, setSelectedUserIds, 
       uploadLeads
   };
 }

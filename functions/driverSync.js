@@ -1,10 +1,8 @@
 // hr portal/functions/driverSync.js
 
-const admin = require("firebase-admin");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
-
-const db = admin.firestore();
-const auth = admin.auth();
+// UPDATED: Import from shared singleton
+const { admin, db, auth } = require("./firebaseAdmin");
 
 /**
  * SHARED HELPER: Finds or Creates the Auth User and syncs data to the Master Profile.
@@ -14,14 +12,12 @@ const auth = admin.auth();
 async function processDriverData(data) {
   const email = data.email;
   const phone = data.phone;
-
   if (!email || email.includes('@placeholder.com')) {
     console.log("Skipping profile sync: No valid email provided.");
     return;
   }
 
   let driverUid;
-
   // 1. Find or Create Auth User
   try {
     try {
@@ -44,7 +40,7 @@ async function processDriverData(data) {
     }
   } catch (error) {
     console.error("Error managing driver auth:", error);
-    return; 
+    return;
   }
 
   // 2. Create/Update Master Profile

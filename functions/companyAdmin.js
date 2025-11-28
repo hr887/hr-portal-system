@@ -1,10 +1,9 @@
 // hr portal/functions/companyAdmin.js
 
-const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const nodemailer = require("nodemailer");
-
-const db = admin.firestore();
+// UPDATED: Import from shared singleton
+const { admin, db } = require("./firebaseAdmin");
 
 // --- EXPORT 1: Delete Company (Super Admin) ---
 exports.deleteCompany = onCall(async (request) => {
@@ -23,6 +22,7 @@ exports.deleteCompany = onCall(async (request) => {
     
     // 2. Delete Memberships (trigger onMembershipWrite runs here)
     const membershipsSnap = await db.collection("memberships").where("companyId", "==", companyId).get();
+  
     const batch = db.batch();
     membershipsSnap.forEach((doc) => 
     {
@@ -102,6 +102,7 @@ exports.sendAutomatedEmail = onCall(async (request) => {
             pass: settings.appPassword
         }
     });
+
     let subject = template.subject;
     let body = template.body;
 
@@ -139,8 +140,7 @@ exports.distributeDailyLeads = onCall(async (request) => {
     const leadsSnap = await db.collection("leads")
         .orderBy("createdAt", "desc")
         .limit(200) 
-        
-    .get();
+        .get();
 
     if (leadsSnap.empty) return { message: "No leads found in pool." };
 
@@ -154,11 +154,10 @@ exports.distributeDailyLeads = onCall(async (request) => {
         const plan = companyDoc.data().planType || 'free';
         const limit = plan === 'paid' ? 200 : 50;
 
-        
         let sentCount = 0;
-        
         for (const leadDoc of leadsSnap.docs) {
             if (sentCount >= limit) break;
+
             const leadData = leadDoc.data();
             const destRef = db.collection("companies").doc(companyId).collection("leads").doc(leadDoc.id);
             
@@ -168,6 +167,7 @@ exports.distributeDailyLeads = onCall(async (request) => {
                 distributedAt: admin.firestore.FieldValue.serverTimestamp(),
                 originalLeadId: leadDoc.id,
             };
+
             batch.set(destRef, distData, { merge: true });
             sentCount++;
             opCount++;

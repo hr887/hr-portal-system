@@ -2,13 +2,14 @@
 import React, { useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/config';
-import { useData } from '../../App.jsx';
-import { getFieldValue, formatPhoneNumber } from '../../utils/helpers'; // <-- Import helper
+// UPDATED: Import from new context file
+import { useData } from '../../context/DataContext';
+import { getFieldValue, formatPhoneNumber } from '../../utils/helpers';
 import { ArrowLeft, MapPin, Mail, Phone, Truck, Briefcase, Loader2, CheckCircle, Send, FileText, MessageSquare } from 'lucide-react';
 import { NotesTab } from './NotesTab.jsx';
 
 export function DriverProfileView({ driver, onBack }) {
-    const { currentCompanyProfile } = useData(); 
+    const { currentCompanyProfile } = useData();
     const [sending, setSending] = useState(false);
     const [inviteSent, setInviteSent] = useState(false);
     const [activeTab, setActiveTab] = useState('profile'); 
@@ -17,7 +18,7 @@ export function DriverProfileView({ driver, onBack }) {
     const qual = driver.qualifications || {};
     const dp = driver.driverProfile || {};
     const lic = driver.licenses || [];
-    
+
     const handleSendInvite = async () => {
         if (inviteSent) return;
         if (!pi.email || pi.email.includes('placeholder.com')) {

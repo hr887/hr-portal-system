@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from '../../firebase/config';
 import { collectionGroup, query, where, getDocs, doc, getDoc, Timestamp, collection } from 'firebase/firestore';
 import { Trophy, Loader2, Medal } from 'lucide-react';
-import { useData } from '../../App.jsx';
+// UPDATED: Import from new context file
+import { useData } from '../../context/DataContext';
 import { PerformanceDetailModal } from '../modals/PerformanceDetailModal';
 
 export function PerformanceWidget({ companyId }) {
@@ -64,23 +65,30 @@ export function PerformanceWidget({ companyId }) {
             });
 
             // 3. Fetch Activities (Calls only)
+            // FIX: We rely on a simpler query: type=='call' AND timestamp>=today
+            // We use client-side filtering for companyId and uid checks.
             const activitiesRef = collectionGroup(db, 'activities');
             const q = query(
                 activitiesRef,
-                where('companyId', '==', companyId),
                 where('type', '==', 'call'),
                 where('timestamp', '>=', startTimestamp)
             );
             const activitiesSnap = await getDocs(q);
 
-            // 4. Aggregate
+            // 4. Aggregate and Filter
             activitiesSnap.forEach(docSnap => {
                 const data = docSnap.data();
+                
+                // IMPORTANT CLIENT-SIDE FILTERS:
+                // a) Only process calls logged by members of the current company
+                if (!statsMap[data.performedBy]) return;
+                // b) Only process activities logged against the current company (redundancy check)
+                if (data.companyId !== companyId) return;
+
                 const uid = data.performedBy;
 
                 if (statsMap[uid]) {
-                    statsMap[uid].dials += 1; // Count every activity as a Dial
-
+                    statsMap[uid].dials += 1;
                     if (data.isContact) {
                         statsMap[uid].contacts += 1;
                     }
@@ -107,10 +115,10 @@ export function PerformanceWidget({ companyId }) {
             setLoading(false);
         }
     };
-    
-    // Refresh when modal closes to ensure stats are up to date
+
+    // We only need to fetch if the modal is closed OR if the component mounts/company changes.
+    // If we are showing the modal, the modal uses the existing `leaderboard` data.
     if (!showModal) fetchData();
-    
   }, [companyId, currentUserClaims, showModal]);
 
   if (loading) return (
@@ -155,7 +163,7 @@ export function PerformanceWidget({ companyId }) {
                             rankStyle = "bg-slate-100 text-slate-700 ring-1 ring-slate-200"; 
                             rankContent = <Medal size={12} className="fill-slate-300 text-slate-500"/>;
                         } else if (index === 2) { 
-                            rankStyle = "bg-orange-50 text-orange-800 ring-1 ring-orange-200"; 
+                            rankStyle = "bg-orange-50 text-orange-800 ring-1 ring-orange-200";
                             rankContent = <Medal size={12} className="fill-orange-300 text-orange-600"/>;
                         }
 

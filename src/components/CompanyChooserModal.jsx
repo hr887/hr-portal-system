@@ -1,8 +1,9 @@
 // src/components/CompanyChooserModal.jsx
 import React, { useState, useEffect } from 'react';
-import { useData } from '../App.jsx';
+// UPDATED: Import from new context file
+import { useData } from '../context/DataContext';
 import { getCompanyProfile } from '../firebase/firestore.js';
-import { Briefcase, LogOut } from 'lucide-react'; // Added icons
+import { Briefcase, LogOut } from 'lucide-react';
 
 export function CompanyChooserModal() {
   const [loading, setLoading] = useState(true);
@@ -36,7 +37,7 @@ export function CompanyChooserModal() {
         for (const companyId of companyIds) {
           const companyData = await getCompanyProfile(companyId);
           if (companyData) {
-            fetchedData.push({
+             fetchedData.push({
               id: companyId,
               data: companyData,
               role: companyRoles[companyId]
@@ -64,7 +65,7 @@ export function CompanyChooserModal() {
         <div className="p-8">
           <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">Choose Company</h2>
           <p className="text-gray-600 mb-6 text-center">You have access to multiple companies. Please pick one to continue.</p>
-          
+           
           <div id="company-choice-list" className="space-y-3 max-h-60 overflow-y-auto pr-2">
             {loading && <p className="text-center text-gray-500">Loading companies...</p>}
             {error && <p className="text-red-600 text-center">{error}</p>}
@@ -76,7 +77,7 @@ export function CompanyChooserModal() {
                 onClick={() => loginToCompany(company.id, company.role)}
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 text-blue-600 rounded-full">
+                   <div className="p-2 bg-blue-100 text-blue-600 rounded-full">
                     <Briefcase size={20} />
                   </div>
                   <div>
