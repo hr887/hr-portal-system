@@ -4,32 +4,18 @@ import { Section, InfoGrid, InfoItem } from './ApplicationUI.jsx';
 import { getFieldValue, formatPhoneNumber } from '../../utils/helpers.js';
 import { Phone, CheckCircle, XCircle, AlertTriangle, FileSignature, Truck, HelpCircle, AlertCircle } from 'lucide-react';
 
-const DRIVER_TYPES = [
-    "Dry Van", "Reefer", "Flatbed", "Box Truck", "Tanker", "Team"
-];
+const DRIVER_POSITIONS = ["Company Driver", "Lease Operator", "Owner Operator", "Team Driver"];
+const DRIVER_TYPES = ["Dry Van", "Reefer", "Flatbed", "Tanker", "Box Truck", "Car Hauler", "Step Deck", "Lowboy", "Conestoga", "Intermodal", "Power Only", "Hotshot"];
 
 export function ApplicationInfo({ 
-  appData, 
-  fileUrls, 
-  isEditing, 
-  isUploading, 
-  handleDataChange,
-  companyId,
-  applicationId,
-  currentStatus,
-  handleStatusUpdate,
-  handleDriverTypeUpdate,
-  isCompanyAdmin,
-  isSuperAdmin,
-  onPhoneClick 
+  appData, fileUrls, isEditing, isUploading, handleDataChange,
+  companyId, applicationId, currentStatus, handleStatusUpdate,
+  handleDriverTypeUpdate, isCompanyAdmin, isSuperAdmin, onPhoneClick 
 }) {
   
   if (!appData) return null;
 
-  // --- HELPER: Safely display Yes/No/Unknown ---
-  // Fixes the issue where missing data defaulted to "No/Not Authorized"
   const renderBooleanStatus = (val, labelTrue, labelFalse) => {
-      // 1. Handle missing data explicitly
       if (val === null || val === undefined || val === '') {
           return (
             <div className="flex items-center gap-2">
@@ -38,10 +24,7 @@ export function ApplicationInfo({
             </div>
           );
       }
-
-      // 2. Handle string 'yes'/'no' or boolean true/false
       const isTrue = String(val).toLowerCase() === 'yes' || val === true;
-      
       return (
           <div className="flex items-center gap-2">
               {isTrue ? <CheckCircle className="text-green-500" size={20}/> : <XCircle className="text-red-500" size={20}/>}
@@ -52,10 +35,23 @@ export function ApplicationInfo({
       );
   };
 
+  // Helper for multi-select checkboxes in edit mode
+  const handleTypeToggle = (type) => {
+      let currentTypes = appData.driverType || [];
+      // Ensure it's an array
+      if (!Array.isArray(currentTypes)) currentTypes = [currentTypes];
+      
+      const newTypes = currentTypes.includes(type) 
+          ? currentTypes.filter(t => t !== type)
+          : [...currentTypes, type];
+      
+      handleDataChange('driverType', newTypes);
+  };
+
   return (
     <div className="space-y-6">
       
-      {/* --- STATUS & TYPE BAR (Header) --- */}
+      {/* --- STATUS HEADER --- */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-4">
         <div>
            <span className="text-gray-500 text-sm font-semibold uppercase">Current Status</span>
@@ -67,23 +63,8 @@ export function ApplicationInfo({
         
         {(isCompanyAdmin || isSuperAdmin) && !isEditing && (
            <div className="flex flex-col sm:flex-row gap-3 items-end sm:items-center w-full sm:w-auto">
-             
-             {/* DRIVER TYPE DROPDOWN */}
-             <div className="relative w-full sm:w-auto">
-                <Truck size={16} className="absolute left-2.5 top-3 text-gray-400 pointer-events-none"/>
-                <select
-                   className="w-full sm:w-48 pl-9 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-300 transition-colors"
-                   value={appData.driverType || appData.positionApplyingTo || ''}
-                   onChange={(e) => handleDriverTypeUpdate(e.target.value)}
-                >
-                    <option value="">-- Set Type --</option>
-                    {DRIVER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-             </div>
-
-             {/* STATUS DROPDOWN */}
              <select 
-               className="w-full sm:w-auto p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-300 transition-colors"
+               className="w-full sm:w-auto p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
                value={currentStatus}
                onChange={(e) => handleStatusUpdate(e.target.value)}
              >
@@ -109,22 +90,13 @@ export function ApplicationInfo({
           <InfoItem label="Middle Name" value={appData.middleName} isEditing={isEditing} onChange={v => handleDataChange('middleName', v)} />
           <InfoItem label="Last Name" value={appData.lastName} isEditing={isEditing} onChange={v => handleDataChange('lastName', v)} />
           
-          {/* PHONE FIELD WITH FORMATTING */}
           <div className="col-span-1">
              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label>
              {isEditing ? (
-                 <input 
-                    className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                    value={appData.phone || ''}
-                    onChange={(e) => handleDataChange('phone', e.target.value)}
-                 />
+                 <input className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={appData.phone || ''} onChange={(e) => handleDataChange('phone', e.target.value)} />
              ) : (
                  onPhoneClick && appData.phone ? (
-                     <button 
-                        onClick={onPhoneClick}
-                        className="text-lg font-medium text-blue-600 hover:underline flex items-center gap-2 transition-colors"
-                        title="Call this number"
-                     >
+                     <button onClick={onPhoneClick} className="text-lg font-medium text-blue-600 hover:underline flex items-center gap-2 transition-colors">
                         <Phone size={16} className="fill-blue-100"/> {formatPhoneNumber(getFieldValue(appData.phone))}
                      </button>
                  ) : (
@@ -146,58 +118,56 @@ export function ApplicationInfo({
         </div>
       </Section>
 
-      {/* --- QUALIFICATIONS & LICENSE --- */}
-      <Section title="Qualifications & License">
+      {/* --- QUALIFICATIONS & TYPE --- */}
+      <Section title="Position & Qualifications">
          <InfoGrid>
+            {/* POSITION */}
             <InfoItem 
-                label="Driver Type / Position" 
-                value={appData.driverType || appData.positionApplyingTo} 
+                label="Position Applied For" 
+                value={appData.positionApplyingTo} 
                 isEditing={isEditing} 
-                onChange={v => handleDataChange('driverType', v)} 
-                options={DRIVER_TYPES} 
+                onChange={v => handleDataChange('positionApplyingTo', v)} 
+                options={DRIVER_POSITIONS} 
             />
 
-            <InfoItem 
-                label="Experience" 
-                value={appData['experience-years'] || appData.experience} 
-                isEditing={isEditing} 
-                onChange={v => handleDataChange('experience-years', v)} 
-            />
+            {/* DRIVER TYPES (Multi-Select Support) */}
+            <div className="col-span-1 md:col-span-2">
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Driver Types</label>
+                {isEditing ? (
+                    <div className="flex flex-wrap gap-2">
+                        {DRIVER_TYPES.map(type => {
+                            const isSelected = (appData.driverType || []).includes(type);
+                            return (
+                                <button
+                                    key={type}
+                                    onClick={() => handleTypeToggle(type)}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
+                                        isSelected ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {type}
+                                </button>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <p className="text-lg font-medium text-gray-900">
+                        {Array.isArray(appData.driverType) ? appData.driverType.join(', ') : (appData.driverType || 'Not Specified')}
+                    </p>
+                )}
+            </div>
+
+            <InfoItem label="Experience" value={appData['experience-years'] || appData.experience} isEditing={isEditing} onChange={v => handleDataChange('experience-years', v)} />
             
-            {/* Legal to Work */}
             <div className="col-span-1">
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Legal to Work?</label>
                 {isEditing ? (
-                    <select 
-                        className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                        value={appData['legal-work'] || ''}
-                        onChange={(e) => handleDataChange('legal-work', e.target.value)}
-                    >
+                    <select className="w-full p-2 border border-gray-300 rounded" value={appData['legal-work'] || ''} onChange={(e) => handleDataChange('legal-work', e.target.value)}>
                         <option value="">Select...</option>
                         <option value="yes">Yes</option>
                         <option value="no">No</option>
                     </select>
-                ) : (
-                    renderBooleanStatus(appData['legal-work'], 'Authorized', 'Not Authorized')
-                )}
-            </div>
-        
-            {/* English Fluency */}
-            <div className="col-span-1">
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">English Fluency</label>
-                {isEditing ? (
-                    <select 
-                        className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                        value={appData['english-fluency'] || ''}
-                        onChange={(e) => handleDataChange('english-fluency', e.target.value)}
-                    >
-                        <option value="">Select...</option>
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                    </select>
-                ) : (
-                    renderBooleanStatus(appData['english-fluency'], 'Fluent', 'Not Fluent')
-                )}
+                ) : renderBooleanStatus(appData['legal-work'], 'Authorized', 'Not Authorized')}
             </div>
          </InfoGrid>
 
@@ -213,7 +183,7 @@ export function ApplicationInfo({
          </div>
       </Section>
 
-      {/* --- CUSTOM QUESTIONS ANSWERS (Dynamically Rendered) --- */}
+      {/* --- CUSTOM QUESTIONS --- */}
       {appData.customAnswers && Object.keys(appData.customAnswers).length > 0 && (
           <Section title="Supplemental Questions">
               <div className="space-y-4">
@@ -230,31 +200,27 @@ export function ApplicationInfo({
       )}
 
       {/* --- EMPLOYMENT HISTORY --- */}
-      <Section title="Employment History (10 Years)">
+      <Section title="Employment History">
           {appData.employers && appData.employers.length > 0 ? (
               <div className="space-y-6">
                   {appData.employers.map((emp, index) => (
                       <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                           <div className="flex justify-between items-start mb-2">
                               <h4 className="font-bold text-gray-900">{emp.name}</h4>
-                              <span className="text-xs font-semibold text-gray-500 bg-white px-2 py-1 border rounded">
-                                  {emp.startDate} - {emp.endDate || 'Present'}
-                              </span>
+                              <span className="text-xs font-semibold text-gray-500 bg-white px-2 py-1 border rounded">{emp.startDate} - {emp.endDate || 'Present'}</span>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-y-1 text-sm text-gray-600">
                               <p><span className="font-medium">Address:</span> {emp.address}, {emp.city}, {emp.state}</p>
                               <p><span className="font-medium">Position:</span> {emp.position}</p>
-                              <p><span className="font-medium">Reason for Leaving:</span> {emp.reasonForLeaving}</p>
+                              <p><span className="font-medium">Reason:</span> {emp.reasonForLeaving}</p>
                           </div>
                       </div>
                   ))}
               </div>
-          ) : (
-              <p className="text-gray-500 italic">No employment history provided.</p>
-          )}
+          ) : <p className="text-gray-500 italic">No employment history provided.</p>}
       </Section>
 
-      {/* --- SIGNATURE & CONSENT --- */}
+      {/* --- SIGNATURE --- */}
       <Section title="Digital Signature & Consent">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>

@@ -1,15 +1,14 @@
 // src/components/admin/settings/CompanyProfileTab.jsx
 import React, { useState, useEffect } from 'react';
-import { saveCompanySettings } from '../../../firebase/firestore'; // <-- Use the new centralized function
-import { uploadCompanyLogo } from '../../../firebase/storage'; // <-- Use storage helper
-import { Building, Save, Loader2, DollarSign, Clock, Plus, Trash2, HelpCircle } from 'lucide-react';
+import { saveCompanySettings } from '../../../firebase/firestore'; 
+import { uploadCompanyLogo } from '../../../firebase/storage';
+import { Building, Save, Loader2, DollarSign, Clock, Plus, Trash2, HelpCircle, Truck } from 'lucide-react';
 import { useToast } from '../../feedback/ToastProvider';
 
-// --- CONSTANTS ---
 const HOME_TIME_OPTIONS = ["Daily", "Weekends", "Weekly", "Bi-Weekly", "Monthly", "OTR"];
 const BENEFIT_OPTIONS = ["Health Insurance", "Dental", "401k", "Sign-on Bonus", "Pet Policy", "Rider Policy", "New Equipment"];
+const DRIVER_TYPE_OPTIONS = ["Dry Van", "Reefer", "Flatbed", "Tanker", "Box Truck", "Car Hauler", "Step Deck", "Lowboy", "Conestoga", "Intermodal", "Power Only", "Hotshot"];
 
-// --- HELPER COMPONENT ---
 const StructuredOfferForm = ({ id, label, checked, offerData, onCheckChange, onDataChange }) => {
     const data = offerData || { cpm: '', homeTime: 'Weekly', benefits: [] };
 
@@ -89,8 +88,6 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
     const [compData, setCompData] = useState({});
     const [loading, setLoading] = useState(false);
     const [logoUploading, setLogoUploading] = useState(false);
-    
-    // Custom Questions State
     const [newQuestion, setNewQuestion] = useState('');
 
     useEffect(() => {
@@ -108,7 +105,8 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
                 companyLogoUrl: currentCompanyProfile.companyLogoUrl || '',
                 hiringPreferences: currentCompanyProfile.hiringPreferences || {},
                 structuredOffers: currentCompanyProfile.structuredOffers || {},
-                customQuestions: currentCompanyProfile.customQuestions || [] // Load existing questions
+                customQuestions: currentCompanyProfile.customQuestions || [],
+                driverTypes: currentCompanyProfile.driverTypes || [] // Load driver types
             });
         }
     }, [currentCompanyProfile]);
@@ -116,7 +114,6 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
     const handleSaveCompany = async () => {
         setLoading(true);
         try {
-            // Prepare clean payload for the service function
             const payload = {
                 companyName: compData.companyName,
                 contact: { phone: compData.phone, email: compData.email },
@@ -124,7 +121,8 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
                 legal: { mcNumber: compData.mcNumber, dotNumber: compData.dotNumber },
                 hiringPreferences: compData.hiringPreferences,
                 structuredOffers: compData.structuredOffers,
-                customQuestions: compData.customQuestions, // Save questions
+                customQuestions: compData.customQuestions,
+                driverTypes: compData.driverTypes, // Save Types
                 companyLogoUrl: compData.companyLogoUrl
             };
 
@@ -141,16 +139,10 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
     const handleLogoUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        
         setLogoUploading(true);
         try {
-            // Use the centralized storage helper
             const downloadURL = await uploadCompanyLogo(currentCompanyProfile.id, file);
-            
-            // Save just the URL immediately via the service
             await saveCompanySettings(currentCompanyProfile.id, { companyLogoUrl: downloadURL });
-            
-            // Update local state
             setCompData(prev => ({ ...prev, companyLogoUrl: downloadURL }));
             showSuccess("Logo uploaded successfully!");
         } catch (error) {
@@ -175,7 +167,15 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
         }));
     };
 
-    // --- Custom Question Handlers ---
+    // Toggle for Freight Types
+    const handleDriverTypeToggle = (type) => {
+        const current = compData.driverTypes || [];
+        const updated = current.includes(type)
+            ? current.filter(t => t !== type)
+            : [...current, type];
+        setCompData(prev => ({ ...prev, driverTypes: updated }));
+    };
+
     const addQuestion = () => {
         if (!newQuestion.trim()) return;
         setCompData(prev => ({
@@ -203,7 +203,6 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
                 <div className="w-24 h-24 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-200 overflow-hidden shrink-0">
                     {compData.companyLogoUrl ? <img src={compData.companyLogoUrl} alt="Logo" className="w-full h-full object-contain" /> : <Building className="text-gray-400" size={32} />}
                 </div>
-                
                 <div>
                     <h4 className="font-semibold text-gray-900">Company Logo</h4>
                     <p className="text-xs text-gray-500 mb-3">Recommended size: 400x400px. PNG or JPG.</p>
@@ -219,13 +218,36 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">MC Number</label><input type="text" value={compData.mcNumber || ''} onChange={(e) => setCompData({ ...compData, mcNumber: e.target.value })} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
             </div>
 
-            {/* --- CUSTOM QUESTIONS SECTION --- */}
+            {/* --- NEW: FREIGHT/DRIVER TYPES --- */}
+            <div className="mt-8 border-t border-gray-200 pt-8">
+                <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+                    <Truck size={20} className="text-blue-600"/> Supported Freight Types
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">Select all the freight types your company hauls.</p>
+                <div className="flex flex-wrap gap-2">
+                    {DRIVER_TYPE_OPTIONS.map(type => {
+                        const isSelected = (compData.driverTypes || []).includes(type);
+                        return (
+                            <button
+                                key={type}
+                                onClick={() => handleDriverTypeToggle(type)}
+                                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-all ${
+                                    isSelected 
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                                }`}
+                            >
+                                {type}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
             <div className="mt-8 border-t border-gray-200 pt-8">
                 <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
                     <HelpCircle size={20} className="text-blue-600"/> Custom Application Questions
                 </h3>
-                <p className="text-sm text-gray-500 mb-4">Add specific questions for drivers to answer when applying to your company (e.g. "Do you have flatbed experience?").</p>
-                
                 <div className="space-y-3 mb-4">
                     {compData.customQuestions?.map((q, i) => (
                         <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
@@ -235,11 +257,7 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
                             </button>
                         </div>
                     ))}
-                    {(!compData.customQuestions || compData.customQuestions.length === 0) && (
-                        <p className="text-sm text-gray-400 italic">No custom questions added yet.</p>
-                    )}
                 </div>
-
                 <div className="flex gap-2">
                     <input 
                         type="text" 
@@ -249,11 +267,7 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
                         onChange={(e) => setNewQuestion(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addQuestion())}
                     />
-                    <button 
-                        type="button"
-                        onClick={addQuestion}
-                        className="px-4 py-2 bg-blue-100 text-blue-700 font-bold rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-2"
-                    >
+                    <button type="button" onClick={addQuestion} className="px-4 py-2 bg-blue-100 text-blue-700 font-bold rounded-lg hover:bg-blue-200 flex items-center gap-2">
                         <Plus size={18} /> Add
                     </button>
                 </div>
@@ -261,7 +275,6 @@ export function CompanyProfileTab({ currentCompanyProfile }) {
 
             <div className="mt-8 border-t border-gray-200 pt-8">
                 <h3 className="text-lg font-bold text-gray-900 mb-2">Hiring Positions & Offers</h3>
-                <p className="text-sm text-gray-500 mb-6">Standardize your offers to help drivers find you.</p>
                 <div className="grid grid-cols-1 gap-4">
                     {[
                         { id: 'companyDriverSolo', label: 'Company Driver (Solo)' },

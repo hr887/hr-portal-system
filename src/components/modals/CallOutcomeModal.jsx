@@ -3,21 +3,42 @@ import React, { useState } from 'react';
 import { db, auth, functions } from '../../firebase/config';
 import { addDoc, collection, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Phone, X, Save, Loader2, MessageSquare, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { Phone, X, Save, Loader2, MessageSquare, CheckCircle, XCircle, Clock, AlertCircle, Ban, ThumbsDown, Truck } from 'lucide-react';
 
 const OUTCOMES = [
     { id: 'connected', label: 'Connected / Spoke', icon: <CheckCircle size={18} className="text-green-600"/>, isContact: true },
     { id: 'voicemail', label: 'Left Voicemail', icon: <MessageSquare size={18} className="text-yellow-600"/>, isContact: false },
     { id: 'no_answer', label: 'No Answer', icon: <XCircle size={18} className="text-red-600"/>, isContact: false },
     { id: 'callback', label: 'Scheduled Callback', icon: <Clock size={18} className="text-blue-600"/>, isContact: true },
-    { id: 'not_interested', label: 'Not Interested', icon: <XCircle size={18} className="text-gray-600"/>, isContact: true },
-    { id: 'wrong_number', label: 'Wrong Number', icon: <AlertCircle size={18} className="text-orange-600"/>, isContact: false },
+    { id: 'not_interested', label: 'Not Interested', icon: <ThumbsDown size={18} className="text-gray-600"/>, isContact: true },
+    { id: 'not_qualified', label: 'Not Qualified', icon: <Ban size={18} className="text-orange-600"/>, isContact: true },
+    { id: 'wrong_number', label: 'Wrong Number', icon: <AlertCircle size={18} className="text-red-400"/>, isContact: false },
+];
+
+const DRIVER_TYPES = [
+    "Dry Van", 
+    "Reefer", 
+    "Flatbed", 
+    "Tanker", 
+    "Box Truck", 
+    "Car Hauler", 
+    "Step Deck", 
+    "Lowboy", 
+    "Conestoga", 
+    "Intermodal", 
+    "Power Only", 
+    "Hotshot"
 ];
 
 export function CallOutcomeModal({ lead, companyId, onClose, onUpdate }) {
     const [outcome, setOutcome] = useState('connected');
     const [notes, setNotes] = useState('');
+    const [driverType, setDriverType] = useState(lead.driverType || ''); // Pre-fill if exists
     const [saving, setSaving] = useState(false);
+
+    // Logic to determine if we show the driver type dropdown
+    // UPDATED: Added 'not_qualified' to the list
+    const showDriverTypeSelect = ['connected', 'not_interested', 'callback', 'not_qualified'].includes(outcome);
 
     const handleSave = async () => {
         if (!auth.currentUser) return;
@@ -31,88 +52,96 @@ export function CallOutcomeModal({ lead, companyId, onClose, onUpdate }) {
         const collectionName = (lead.submittedAt || lead.sourceType === 'Company App') ? 'applications' : 'leads';
 
         try {
-            // --- FIX: Get Real Name ---
+            // Get Real Name
             let authorName = auth.currentUser.displayName;
             if (!authorName) {
-                // Fetch from Firestore profile if Auth profile is empty
                 const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
                 if (userDoc.exists()) {
                     authorName = userDoc.data().name;
                 }
             }
-            // Fallback if still missing
             authorName = authorName || 'Recruiter';
 
             // 1. Log to Activities (For Leaderboard & Stats)
             await addDoc(collection(db, 'companies', companyId, collectionName, lead.id, 'activities'), {
                 type: 'call',
                 outcome: outcome,
-                isContact: isContact, 
+                outcomeLabel: outcomeLabel,
+                isContact: isContact,
                 notes: notes,
+                driverTypeUpdate: showDriverTypeSelect ? driverType : null, // Record what was selected
                 performedBy: auth.currentUser.uid,
-                performedByName: authorName, // Saves real name
+                performedByName: authorName, 
                 companyId: companyId, 
                 leadId: lead.id,      
                 timestamp: serverTimestamp()
             });
 
-            // 2. Log to Internal Notes (For Visibility in Notes Tab)
+            // 2. Log to Internal Notes
+            let noteText = `[Call Log: ${outcomeLabel}]`;
+            if (showDriverTypeSelect && driverType) {
+                noteText += `\nIdentified as: ${driverType}`;
+            }
+            if (notes) {
+                noteText += `\n${notes}`;
+            }
+
             await addDoc(collection(db, 'companies', companyId, collectionName, lead.id, 'internal_notes'), {
-                text: `[Call Log: ${outcomeLabel}]\n${notes}`,
-                author: authorName, // Saves real name
+                text: noteText,
+                author: authorName,
                 createdAt: serverTimestamp(),
                 type: 'call_log' 
             });
 
-            // 3. Update the Document Status
+            // 3. Update the Document Status & Driver Type
             const docRef = doc(db, 'companies', companyId, collectionName, lead.id);
             
             let newStatus = lead.status;
             if (outcome === 'connected') newStatus = 'Contacted';
             if (outcome === 'voicemail') newStatus = 'Attempted';
             if (outcome === 'not_interested') newStatus = 'Rejected';
+            if (outcome === 'not_qualified') newStatus = 'Disqualified';
             if (outcome === 'wrong_number') newStatus = 'Disqualified';
 
             const updateData = { 
                 lastContactedAt: serverTimestamp(),
                 lastContactedBy: auth.currentUser.uid
             };
-            
+
             // Only update status if it's not already in a "final" state like Hired/Rejected (unless outcome forces it)
-            if (['New Lead', 'New Application', 'Attempted', 'Contacted'].includes(lead.status) || ['Rejected', 'Disqualified'].includes(newStatus)) {
+            const forceUpdate = ['not_interested', 'not_qualified', 'wrong_number'].includes(outcome);
+            
+            if (forceUpdate || ['New Lead', 'New Application', 'Attempted', 'Contacted'].includes(lead.status)) {
                 updateData.status = newStatus;
+            }
+
+            // Update Driver Type if selected
+            if (showDriverTypeSelect && driverType) {
+                updateData.driverType = driverType;
             }
 
             await updateDoc(docRef, updateData);
 
-            // --- 4. TRIGGER AUTOMATION (New) ---
-            // If No Answer or Voicemail, try to send the automated email
+            // --- 4. TRIGGER AUTOMATION ---
             if (['no_answer', 'voicemail'].includes(outcome) && lead.email && !lead.email.includes('placeholder.com')) {
                 try {
                     const sendEmail = httpsCallable(functions, 'sendAutomatedEmail');
-                    
-                    // We don't await this to block the UI, but we trigger it
                     sendEmail({
                         companyId,
                         recipientEmail: lead.email,
-                        triggerType: 'no_answer', // This matches the key in EmailSettingsTab
+                        triggerType: 'no_answer',
                         placeholders: {
                             driverfullname: `${lead.firstName} ${lead.lastName}`,
                             driverfirstname: lead.firstName,
                             recruitername: authorName
                         }
-                    }).then(result => {
-                        console.log("Automation result:", result.data);
-                    }).catch(err => {
-                        console.error("Automation failed silently:", err);
-                    });
-
+                    }).catch(err => console.error("Automation failed silently:", err));
                 } catch (emailErr) {
                     console.error("Failed to initiate automation:", emailErr);
                 }
             }
 
-            if (onUpdate) onUpdate(); 
+            if (onUpdate) onUpdate();
             onClose();
 
         } catch (error) {
@@ -143,7 +172,7 @@ export function CallOutcomeModal({ lead, companyId, onClose, onUpdate }) {
                             <button
                                 key={opt.id}
                                 onClick={() => setOutcome(opt.id)}
-                                className={`p-3 rounded-lg border text-sm font-medium flex items-center gap-2 transition-all ${
+                                className={`p-3 rounded-lg border text-xs font-medium flex flex-col items-center gap-2 transition-all text-center ${
                                     outcome === opt.id 
                                     ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-600' 
                                     : 'border-gray-200 hover:bg-gray-50 text-gray-700'
@@ -154,6 +183,28 @@ export function CallOutcomeModal({ lead, companyId, onClose, onUpdate }) {
                             </button>
                         ))}
                     </div>
+
+                    {/* --- NEW: Driver Type Dropdown (Freight) --- */}
+                    {showDriverTypeSelect && (
+                        <div className="animate-in fade-in slide-in-from-top-2">
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                                Driver Type (Freight)
+                            </label>
+                            <div className="relative">
+                                <Truck size={16} className="absolute left-3 top-3 text-gray-400" />
+                                <select 
+                                    className="w-full pl-9 p-2.5 border border-blue-300 bg-blue-50/30 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
+                                    value={driverType}
+                                    onChange={(e) => setDriverType(e.target.value)}
+                                >
+                                    <option value="">-- Select Type --</option>
+                                    {DRIVER_TYPES.map(type => (
+                                        <option key={type} value={type}>{type}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Notes (Optional)</label>

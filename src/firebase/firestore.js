@@ -192,6 +192,9 @@ export async function saveCompanySettings(companyId, settingsData) {
     if (settingsData.structuredOffers) payload.structuredOffers = settingsData.structuredOffers;
     if (settingsData.customQuestions) payload.customQuestions = settingsData.customQuestions;
     if (settingsData.companyLogoUrl) payload.companyLogoUrl = settingsData.companyLogoUrl;
+    
+    // NEW: Allow saving driverTypes (Freight Types)
+    if (settingsData.driverTypes) payload.driverTypes = settingsData.driverTypes;
 
     return await updateDoc(companyRef, payload);
 }

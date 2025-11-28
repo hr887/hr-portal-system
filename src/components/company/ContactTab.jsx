@@ -2,9 +2,12 @@
 import React, { useState } from 'react';
 import { Mail, MessageSquare, Send, Loader2, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react';
 import { logActivity } from '../../utils/activityLogger';
-import { normalizePhone } from '../../utils/helpers'; // Assuming this helper exists, if not I'll define it locally or use simple regex
+import { functions } from '../../firebase/config';
+import { httpsCallable } from 'firebase/functions';
+import { useToast } from '../feedback/ToastProvider';
 
 export function ContactTab({ companyId, recordId, collectionName, email, phone }) {
+    const { showSuccess, showError } = useToast();
     const [activeMethod, setActiveMethod] = useState('email'); // 'email', 'sms', 'telegram'
     const [message, setMessage] = useState('');
     const [subject, setSubject] = useState('');
@@ -16,24 +19,22 @@ export function ContactTab({ companyId, recordId, collectionName, email, phone }
         if (!rawPhone) return '';
         // Remove all non-digit characters
         let digits = rawPhone.replace(/\D/g, '');
-        
-        // If it starts with 1 (US country code) and length is 11, keep it. 
+        // If it starts with 1 (US country code) and length is 11, keep it.
         // If length is 10, assume US and add 1.
         if (digits.length === 10) digits = '1' + digits;
-        
         return `https://t.me/+${digits}`;
     };
 
     const handleSend = async (e) => {
         e.preventDefault();
         setSending(true);
-        
+
         try {
             if (activeMethod === 'telegram') {
-                // TELEGRAM LOGIC
+                // --- TELEGRAM LOGIC ---
                 const link = getTelegramLink(phone);
                 if (!link) {
-                    alert("Invalid phone number for Telegram.");
+                    showError("Invalid phone number for Telegram.");
                     setSending(false);
                     return;
                 }
@@ -50,25 +51,60 @@ export function ContactTab({ companyId, recordId, collectionName, email, phone }
                     `Opened Telegram chat for ${phone}`,
                     'communication'
                 );
+                setSuccess(true); 
+
+            } else if (activeMethod === 'email') {
+                // --- EMAIL LOGIC (REAL) ---
+                if (!email) {
+                    showError("No email address available for this driver.");
+                    setSending(false);
+                    return;
+                }
+
+                // Call Cloud Function
+                const sendEmailFn = httpsCallable(functions, 'sendAutomatedEmail');
                 
-                setSuccess(true); // Show success state immediately for UX
-            } else {
-                // EMAIL / SMS LOGIC (Simulated)
-                // 1. Simulate API delay
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // We send a 'manual_email' trigger. 
+                // IMPORTANT: Ensure your Company Settings -> Email Templates has a 'manual_email' template enabled 
+                // OR update the backend to handle raw bodies. 
+                // For now, we pass the custom text as placeholders to override a generic template.
+                await sendEmailFn({
+                    companyId,
+                    recipientEmail: email,
+                    triggerType: 'manual_email', 
+                    placeholders: {
+                        subject: subject,
+                        body: message, // This allows the custom message to be injected if the template uses {body}
+                        driverfirstname: "Driver", // Fallbacks
+                        driverfullname: "Driver"
+                    }
+                });
 
-                // 2. Log the "Sent" activity
-                const actionType = activeMethod === 'email' ? 'Email Sent' : 'SMS Sent';
-                const detailText = activeMethod === 'email' 
-                    ? `Subject: ${subject}\nTo: ${email}` 
-                    : `To: ${phone}\nMessage: ${message}`;
-
+                // Log Activity
                 await logActivity(
                     companyId, 
                     collectionName, 
                     recordId, 
-                    actionType, 
-                    detailText,
+                    'Email Sent', 
+                    `Subject: ${subject}\nTo: ${email}`,
+                    'communication'
+                );
+                
+                showSuccess("Email sent successfully.");
+                setSuccess(true);
+
+            } else {
+                // --- SMS LOGIC (Simulated for now) ---
+                // 1. Simulate API delay
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // 2. Log the "Sent" activity
+                await logActivity(
+                    companyId, 
+                    collectionName, 
+                    recordId, 
+                    'SMS Sent', 
+                    `To: ${phone}\nMessage: ${message}`,
                     'communication'
                 );
                 setSuccess(true);
@@ -81,7 +117,7 @@ export function ContactTab({ companyId, recordId, collectionName, email, phone }
 
         } catch (error) {
             console.error("Send failed:", error);
-            alert("Failed to record communication.");
+            showError(`Failed to send: ${error.message}`);
         } finally {
             setSending(false);
         }
@@ -207,7 +243,12 @@ export function ContactTab({ companyId, recordId, collectionName, email, phone }
                         <div className="flex justify-end">
                             <button 
                                 type="submit"
-                                disabled={sending || (activeMethod === 'sms') || (!email && activeMethod === 'email') || (!phone && activeMethod === 'telegram')}
+                                disabled={
+                                    sending || 
+                                    (activeMethod === 'sms') || 
+                                    (!email && activeMethod === 'email') || 
+                                    (!phone && activeMethod === 'telegram')
+                                }
                                 className={`px-6 py-3 text-white font-bold rounded-xl shadow-md disabled:opacity-50 flex items-center gap-2 transition-all
                                     ${activeMethod === 'telegram' ? 'bg-[#24A1DE] hover:bg-[#1A8LB5]' : 'bg-blue-600 hover:bg-blue-700'}
                                 `}
