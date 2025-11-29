@@ -11,7 +11,7 @@ export function ApplicationInfo({
   appData, fileUrls, isEditing, isUploading, handleDataChange,
   companyId, applicationId, currentStatus, handleStatusUpdate,
   handleDriverTypeUpdate, isCompanyAdmin, isSuperAdmin, 
-  canEdit, // <-- NEW PROP RECEIVED
+  canEdit, canEditAllFields = true, // <-- NEW PROP for full edit permission
   onPhoneClick 
 }) {
   
@@ -87,104 +87,151 @@ export function ApplicationInfo({
       </div>
 
       {/* --- PERSONAL INFO --- */}
-      <Section title="Personal Information">
-        <InfoGrid>
-          <InfoItem label="First Name" value={appData.firstName} isEditing={isEditing} onChange={v => handleDataChange('firstName', v)} />
-          <InfoItem label="Middle Name" value={appData.middleName} isEditing={isEditing} onChange={v => handleDataChange('middleName', v)} />
-          <InfoItem label="Last Name" value={appData.lastName} isEditing={isEditing} onChange={v => handleDataChange('lastName', v)} />
-          
-          <div className="col-span-1">
-             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label>
-             {isEditing ? (
-                 <input className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={appData.phone || ''} onChange={(e) => handleDataChange('phone', e.target.value)} />
-             ) : (
-                 onPhoneClick && appData.phone ? (
-                     <button onClick={onPhoneClick} className="text-lg font-medium text-blue-600 hover:underline flex items-center gap-2 transition-colors">
-                        <Phone size={16} className="fill-blue-100"/> {formatPhoneNumber(getFieldValue(appData.phone))}
-                     </button>
-                 ) : (
-                     <p className="text-lg font-medium text-gray-900">{formatPhoneNumber(getFieldValue(appData.phone))}</p>
-                 )
-             )}
-          </div>
-
-          <InfoItem label="Email" value={appData.email} isEditing={isEditing} onChange={v => handleDataChange('email', v)} />
-          <InfoItem label="DOB" value={appData.dob} isEditing={isEditing} onChange={v => handleDataChange('dob', v)} />
-          <InfoItem label="SSN" value={appData.ssn} isEditing={isEditing} onChange={v => handleDataChange('ssn', v)} />
-        </InfoGrid>
-        
-        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <InfoItem label="Street" value={appData.street} isEditing={isEditing} onChange={v => handleDataChange('street', v)} />
-            <InfoItem label="City" value={appData.city} isEditing={isEditing} onChange={v => handleDataChange('city', v)} />
-            <InfoItem label="State" value={appData.state} isEditing={isEditing} onChange={v => handleDataChange('state', v)} />
-            <InfoItem label="Zip" value={appData.zip} isEditing={isEditing} onChange={v => handleDataChange('zip', v)} />
-        </div>
-      </Section>
-
-      {/* --- QUALIFICATIONS & TYPE --- */}
-      <Section title="Position & Qualifications">
-         <InfoGrid>
-            {/* POSITION */}
-            <InfoItem 
-                label="Position Applied For" 
-                value={appData.positionApplyingTo} 
-                isEditing={isEditing} 
-                onChange={v => handleDataChange('positionApplyingTo', v)} 
-                options={DRIVER_POSITIONS} 
-            />
-
-            {/* DRIVER TYPES (Multi-Select Support) */}
-            <div className="col-span-1 md:col-span-2">
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Driver Types</label>
-                {isEditing ? (
-                    <div className="flex flex-wrap gap-2">
-                        {DRIVER_TYPES.map(type => {
-                            const isSelected = (appData.driverType || []).includes(type);
-                            return (
-                                <button
-                                    key={type}
-                                    onClick={() => handleTypeToggle(type)}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
-                                        isSelected ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {type}
-                                </button>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <p className="text-lg font-medium text-gray-900">
-                        {Array.isArray(appData.driverType) ? appData.driverType.join(', ') : (appData.driverType || 'Not Specified')}
-                    </p>
-                )}
-            </div>
-
-            <InfoItem label="Experience" value={appData['experience-years'] || appData.experience} isEditing={isEditing} onChange={v => handleDataChange('experience-years', v)} />
+      {canEditAllFields ? (
+        <Section title="Personal Information">
+          <InfoGrid>
+            <InfoItem label="First Name" value={appData.firstName} isEditing={isEditing} onChange={v => handleDataChange('firstName', v)} />
+            <InfoItem label="Middle Name" value={appData.middleName} isEditing={isEditing} onChange={v => handleDataChange('middleName', v)} />
+            <InfoItem label="Last Name" value={appData.lastName} isEditing={isEditing} onChange={v => handleDataChange('lastName', v)} />
             
             <div className="col-span-1">
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Legal to Work?</label>
-                {isEditing ? (
-                    <select className="w-full p-2 border border-gray-300 rounded" value={appData['legal-work'] || ''} onChange={(e) => handleDataChange('legal-work', e.target.value)}>
-                        <option value="">Select...</option>
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                    </select>
-                ) : renderBooleanStatus(appData['legal-work'], 'Authorized', 'Not Authorized')}
+               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label>
+               {isEditing ? (
+                   <input className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={appData.phone || ''} onChange={(e) => handleDataChange('phone', e.target.value)} />
+               ) : (
+                   onPhoneClick && appData.phone ? (
+                       <button onClick={onPhoneClick} className="text-lg font-medium text-blue-600 hover:underline flex items-center gap-2 transition-colors">
+                          <Phone size={16} className="fill-blue-100"/> {formatPhoneNumber(getFieldValue(appData.phone))}
+                       </button>
+                   ) : (
+                       <p className="text-lg font-medium text-gray-900">{formatPhoneNumber(getFieldValue(appData.phone))}</p>
+                   )
+               )}
             </div>
-         </InfoGrid>
 
-         <div className="mt-6 pt-4 border-t border-gray-100">
-             <h4 className="text-sm font-bold text-gray-700 mb-3">Commercial Driver's License</h4>
-             <InfoGrid>
-                 <InfoItem label="License Number" value={appData.cdlNumber} isEditing={isEditing} onChange={v => handleDataChange('cdlNumber', v)} />
-                 <InfoItem label="State" value={appData.cdlState} isEditing={isEditing} onChange={v => handleDataChange('cdlState', v)} />
-                 <InfoItem label="Class" value={appData.cdlClass} isEditing={isEditing} onChange={v => handleDataChange('cdlClass', v)} />
-                 <InfoItem label="Expiration" value={appData.cdlExpiration} isEditing={isEditing} onChange={v => handleDataChange('cdlExpiration', v)} />
-                 <InfoItem label="Endorsements" value={appData.endorsements} isEditing={isEditing} onChange={v => handleDataChange('endorsements', v)} />
-             </InfoGrid>
-         </div>
-      </Section>
+            <InfoItem label="Email" value={appData.email} isEditing={isEditing} onChange={v => handleDataChange('email', v)} />
+            <InfoItem label="DOB" value={appData.dob} isEditing={isEditing} onChange={v => handleDataChange('dob', v)} />
+            <InfoItem label="SSN" value={appData.ssn} isEditing={isEditing} onChange={v => handleDataChange('ssn', v)} />
+          </InfoGrid>
+          
+          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <InfoItem label="Street" value={appData.street} isEditing={isEditing} onChange={v => handleDataChange('street', v)} />
+              <InfoItem label="City" value={appData.city} isEditing={isEditing} onChange={v => handleDataChange('city', v)} />
+              <InfoItem label="State" value={appData.state} isEditing={isEditing} onChange={v => handleDataChange('state', v)} />
+              <InfoItem label="Zip" value={appData.zip} isEditing={isEditing} onChange={v => handleDataChange('zip', v)} />
+          </div>
+        </Section>
+      ) : (
+        <Section title="Personal Information">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+            <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={18} />
+            <div className="text-sm text-blue-800">
+              <p className="font-medium">View Only</p>
+              <p className="text-blue-700">As an HR user, you can only edit the status of this application. Other information is view-only.</p>
+            </div>
+          </div>
+          <InfoGrid className="mt-4 opacity-75">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">First Name</label>
+              <p className="text-lg font-medium text-gray-900">{appData.firstName}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Last Name</label>
+              <p className="text-lg font-medium text-gray-900">{appData.lastName}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label>
+              <p className="text-lg font-medium text-gray-900">{formatPhoneNumber(getFieldValue(appData.phone))}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
+              <p className="text-lg font-medium text-gray-900">{appData.email}</p>
+            </div>
+          </InfoGrid>
+        </Section>
+      )}
+
+      {/* --- QUALIFICATIONS & TYPE --- */}
+      {canEditAllFields ? (
+        <Section title="Position & Qualifications">
+           <InfoGrid>
+              {/* POSITION */}
+              <InfoItem 
+                  label="Position Applied For" 
+                  value={appData.positionApplyingTo} 
+                  isEditing={isEditing} 
+                  onChange={v => handleDataChange('positionApplyingTo', v)} 
+                  options={DRIVER_POSITIONS} 
+              />
+
+              {/* DRIVER TYPES (Multi-Select Support) */}
+              <div className="col-span-1 md:col-span-2">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Driver Types</label>
+                  {isEditing ? (
+                      <div className="flex flex-wrap gap-2">
+                          {DRIVER_TYPES.map(type => {
+                              const isSelected = (appData.driverType || []).includes(type);
+                              return (
+                                  <button
+                                      key={type}
+                                      onClick={() => handleTypeToggle(type)}
+                                      className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
+                                          isSelected ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                      }`}
+                                  >
+                                      {type}
+                                  </button>
+                              );
+                          })}
+                      </div>
+                  ) : (
+                      <p className="text-lg font-medium text-gray-900">
+                          {Array.isArray(appData.driverType) ? appData.driverType.join(', ') : (appData.driverType || 'Not Specified')}
+                      </p>
+                  )}
+              </div>
+
+              <InfoItem label="Experience" value={appData['experience-years'] || appData.experience} isEditing={isEditing} onChange={v => handleDataChange('experience-years', v)} />
+              
+              <div className="col-span-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Legal to Work?</label>
+                  {isEditing ? (
+                      <select className="w-full p-2 border border-gray-300 rounded" value={appData['legal-work'] || ''} onChange={(e) => handleDataChange('legal-work', e.target.value)}>
+                          <option value="">Select...</option>
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                      </select>
+                  ) : renderBooleanStatus(appData['legal-work'], 'Authorized', 'Not Authorized')}
+              </div>
+           </InfoGrid>
+
+           <div className="mt-6 pt-4 border-t border-gray-100">
+               <h4 className="text-sm font-bold text-gray-700 mb-3">Commercial Driver's License</h4>
+               <InfoGrid>
+                   <InfoItem label="License Number" value={appData.cdlNumber} isEditing={isEditing} onChange={v => handleDataChange('cdlNumber', v)} />
+                   <InfoItem label="State" value={appData.cdlState} isEditing={isEditing} onChange={v => handleDataChange('cdlState', v)} />
+                   <InfoItem label="Class" value={appData.cdlClass} isEditing={isEditing} onChange={v => handleDataChange('cdlClass', v)} />
+                   <InfoItem label="Expiration" value={appData.cdlExpiration} isEditing={isEditing} onChange={v => handleDataChange('cdlExpiration', v)} />
+                   <InfoItem label="Endorsements" value={appData.endorsements} isEditing={isEditing} onChange={v => handleDataChange('endorsements', v)} />
+               </InfoGrid>
+           </div>
+        </Section>
+      ) : (
+        <Section title="Position & Qualifications">
+          <InfoGrid>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Position Applied For</label>
+              <p className="text-lg font-medium text-gray-900">{appData.positionApplyingTo || 'Not Specified'}</p>
+            </div>
+            <div className="col-span-1 md:col-span-2">
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Driver Types</label>
+              <p className="text-lg font-medium text-gray-900">
+                {Array.isArray(appData.driverType) ? appData.driverType.join(', ') : (appData.driverType || 'Not Specified')}
+              </p>
+            </div>
+          </InfoGrid>
+        </Section>
+      )}
 
       {/* --- CUSTOM QUESTIONS --- */}
       {appData.customAnswers && Object.keys(appData.customAnswers).length > 0 && (

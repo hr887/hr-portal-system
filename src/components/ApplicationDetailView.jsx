@@ -59,6 +59,8 @@ export function ApplicationDetailView({
   const [activeTab, setActiveTab] = useState('application');
 
   const isSuperAdmin = currentUserClaims?.roles?.globalRole === 'super_admin';
+  // Only admins/super admins can edit all fields. Regular HR users can only change status
+  const canEditAllFields = isCompanyAdmin || isSuperAdmin;
   const currentAppName = getFieldValue(appData?.['firstName']) + ' ' + getFieldValue(appData?.['lastName']);
   const driverId = appData?.driverId || appData?.userId;
 
@@ -99,7 +101,8 @@ export function ApplicationDetailView({
             handleDriverTypeUpdate={handleDriverTypeUpdate} 
             isCompanyAdmin={isCompanyAdmin} 
             isSuperAdmin={isSuperAdmin}
-            canEdit={canEdit} // <--- PASSING THE PERMISSION HERE
+            canEdit={canEdit}
+            canEditAllFields={canEditAllFields}
             onPhoneClick={onPhoneClick} 
           />
         );

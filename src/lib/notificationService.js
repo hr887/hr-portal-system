@@ -8,7 +8,8 @@ import {
   onSnapshot, 
   serverTimestamp, 
   doc, 
-  updateDoc 
+  updateDoc,
+  writeBatch // <--- Added for batching
 } from "firebase/firestore";
 import { db } from '../firebase/config';
 
@@ -46,7 +47,6 @@ export async function sendNotification({ recipientId, title, message, type = 'in
 */
 export function subscribeToNotifications(userId, callback) {
   if (!userId) return () => {};
-  
   // We fetch all notifications for the user. 
   // Filtering "Scheduled" vs "Immediate" will happen in the UI component 
   // based on the 'scheduledFor' field.
@@ -55,7 +55,6 @@ export function subscribeToNotifications(userId, callback) {
       where("recipientId", "==", userId),
       orderBy("createdAt", "desc")
   );
-  
   return onSnapshot(q, (snapshot) => {
       const notifications = snapshot.docs.map(doc => ({
           id: doc.id,
@@ -75,13 +74,30 @@ export async function markNotificationAsRead(notificationId) {
 }
 
 /**
-* Marks ALL notifications as read for a user.
+* Marks ALL notifications as read for a user using Batched Writes.
+* Optimized to reduce network requests.
 */
 export async function markAllAsRead(notifications) {
-  // In a real app, use a WriteBatch. For now, we loop (simple MVP).
-  // We typically only mark "current" notifications as read, not future ones,
-  // but for this helper, we'll mark whatever is passed in.
-  notifications.forEach(n => {
-      if (!n.isRead) markNotificationAsRead(n.id);
-  });
+  if (!notifications || notifications.length === 0) return;
+
+  // 1. Filter to only find unread items (no need to write to already read ones)
+  const unreadNotifications = notifications.filter(n => !n.isRead);
+
+  if (unreadNotifications.length === 0) return;
+
+  // 2. Firestore batch limit is 500 operations. 
+  // We chunk the array just in case (though unlikely to have >500 unread)
+  const BATCH_SIZE = 500;
+
+  for (let i = 0; i < unreadNotifications.length; i += BATCH_SIZE) {
+      const chunk = unreadNotifications.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+
+      chunk.forEach(note => {
+          const ref = doc(db, "notifications", note.id);
+          batch.update(ref, { isRead: true });
+      });
+
+      await batch.commit();
+  }
 }

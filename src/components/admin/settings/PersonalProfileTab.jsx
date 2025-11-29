@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
 import { db } from '../../../firebase/config';
-import { Save, Loader2, Link as LinkIcon, Copy, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Save, Loader2, Link as LinkIcon, Copy, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../feedback/ToastProvider';
 
 export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
@@ -13,11 +13,9 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
     const [linkLoading, setLinkLoading] = useState(true);
     const [copied, setCopied] = useState(false);
 
-    // --- CONFIGURATION ---
-    const getDriverAppUrl = () => {
-        let url = import.meta.env.VITE_DRIVER_APP_URL || window.location.origin;
-        return url.replace(/\/$/, "");
-    };
+    // --- CONFIGURATION CHECK ---
+    const driverAppUrl = import.meta.env.VITE_DRIVER_APP_URL;
+    const isConfigured = !!driverAppUrl;
 
     useEffect(() => {
         const fetchUserAndCode = async () => {
@@ -26,11 +24,11 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
                     // 1. Get User Profile
                     const userDocRef = doc(db, "users", currentUser.uid);
                     const userDoc = await getDoc(userDocRef);
-                    
+
                     if (userDoc.exists()) {
                         const data = userDoc.data();
                         setPersonalData({ name: data.name || '' });
-                        
+
                         // 2. Check for existing Short Code
                         if (data.recruitingCode) {
                             setRecruitingCode(data.recruitingCode);
@@ -54,7 +52,7 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
         try {
             // Generate 6-char alphanumeric code (e.g., "9A2K5X")
             const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-            
+
             // 1. Create Mapping Doc (Publicly Readable)
             await setDoc(doc(db, "recruiter_links", code), {
                 userId: uid,
@@ -90,16 +88,20 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
         }
     };
 
-    // Generate Short Unique Link
-    const driverAppUrl = getDriverAppUrl();
+    // Generate Short Unique Link (Only if configured)
     const companySlug = currentCompanyProfile?.appSlug || 'general';
-    
-    // Use the Short Code ('r') if available, otherwise fallback to Long ID ('recruiter')
-    const uniqueLink = recruitingCode 
-        ? `${driverAppUrl}/apply/${companySlug}?r=${recruitingCode}`
-        : `${driverAppUrl}/apply/${companySlug}?recruiter=${currentUser?.uid}`;
+    let uniqueLink = '';
+
+    if (isConfigured) {
+        const baseUrl = driverAppUrl.replace(/\/$/, "");
+        // Use the Short Code ('r') if available, otherwise fallback to Long ID ('recruiter')
+        uniqueLink = recruitingCode 
+            ? `${baseUrl}/apply/${companySlug}?r=${recruitingCode}`
+            : `${baseUrl}/apply/${companySlug}?recruiter=${currentUser?.uid}`;
+    }
 
     const handleCopyLink = () => {
+        if (!uniqueLink) return;
         navigator.clipboard.writeText(uniqueLink);
         setCopied(true);
         showSuccess("Short link copied!");
@@ -114,40 +116,52 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
             </div>
 
             {/* --- RECRUITING LINK SECTION --- */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-6 shadow-sm">
+            <div className={`border rounded-xl p-6 shadow-sm ${!isConfigured ? 'bg-red-50 border-red-200' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100'}`}>
                 <div className="flex items-start gap-4">
-                    <div className="p-3 bg-white rounded-lg shadow-sm text-blue-600">
-                        <LinkIcon size={24} />
+                    <div className={`p-3 rounded-lg shadow-sm ${!isConfigured ? 'bg-white text-red-600' : 'bg-white text-blue-600'}`}>
+                        {!isConfigured ? <AlertTriangle size={24} /> : <LinkIcon size={24} />}
                     </div>
                     <div className="flex-1">
-                        <h3 className="text-lg font-bold text-blue-900 mb-1">Your Short Recruiting Link</h3>
-                        <p className="text-sm text-blue-700 mb-4">
-                            Share this link. Drivers who apply will be <strong>automatically assigned to you</strong>.
-                        </p>
-                        
-                        {linkLoading ? (
-                            <div className="flex items-center gap-2 text-sm text-gray-500">
-                                <Loader2 className="animate-spin" size={16} /> Generating unique code...
+                        <h3 className={`text-lg font-bold mb-1 ${!isConfigured ? 'text-red-800' : 'text-blue-900'}`}>
+                            Your Short Recruiting Link
+                        </h3>
+
+                        {!isConfigured ? (
+                            <div>
+                                <p className="text-sm text-red-700 font-medium mb-2">
+                                    System Configuration Error
+                                </p>
+                                <p className="text-xs text-red-600">
+                                    The <code>VITE_DRIVER_APP_URL</code> environment variable is missing. 
+                                    We cannot generate a valid link. Please contact support or your system administrator.
+                                </p>
                             </div>
                         ) : (
-                            <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-blue-200">
-                                <code className="flex-1 text-xs sm:text-sm font-mono text-gray-600 truncate px-2">
-                                    {uniqueLink}
-                                </code>
-                                <button 
-                                    onClick={handleCopyLink}
-                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-md transition-all flex items-center gap-2"
-                                >
-                                    {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
-                                    {copied ? "Copied" : "Copy"}
-                                </button>
-                            </div>
-                        )}
+                            <>
+                                <p className="text-sm text-blue-700 mb-4">
+                                    Share this link. Drivers who apply will be <strong>automatically assigned to you</strong>.
+                                </p>
 
-                        {!import.meta.env.VITE_DRIVER_APP_URL && (
-                            <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
-                                <AlertTriangle size={10} /> Note: Localhost URL in use. Configure VITE_DRIVER_APP_URL for production.
-                            </p>
+                                {linkLoading ? (
+                                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                                        <Loader2 className="animate-spin" size={16} /> Generating unique code...
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-blue-200">
+                                        <code className="flex-1 text-xs sm:text-sm font-mono text-gray-600 truncate px-2">
+                                            {uniqueLink}
+                                        </code>
+
+                                        <button 
+                                            onClick={handleCopyLink}
+                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-md transition-all flex items-center gap-2"
+                                        >
+                                            {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
+                                            {copied ? "Copied" : "Copy"}
+                                        </button>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>
@@ -174,6 +188,7 @@ export function PersonalProfileTab({ currentUser, currentCompanyProfile }) {
                     />
                     <p className="text-xs text-gray-400 mt-1">Email cannot be changed directly.</p>
                 </div>
+
                 <div className="flex justify-end pt-4">
                     <button 
                         onClick={handleSavePersonal} 

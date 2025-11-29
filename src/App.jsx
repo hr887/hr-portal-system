@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 // --- CONTEXT & PROVIDERS ---
 import { DataProvider, useData } from './context/DataContext';
 import { ToastProvider } from './components/feedback/ToastProvider';
+import ErrorBoundary from './components/feedback/ErrorBoundary'; // <-- NEW IMPORT
 
 // --- COMPONENTS ---
 import { LoginScreen } from './components/LoginScreen.jsx';
@@ -17,17 +18,19 @@ import { CompanySettings } from './components/admin/CompanySettings.jsx';
 
 function RootRedirect() {
   const { currentUser, currentUserClaims } = useData();
+
   if (!currentUser) return <Navigate to="/login" />;
-  
+
   if (currentUserClaims?.roles?.globalRole === 'super_admin') {
       return <Navigate to="/super-admin" />;
   }
-  
+
   return <Navigate to="/company/dashboard" />;
 }
 
 function ProtectedRoute({ children, requiredRole }) {
   const { currentUser, currentUserClaims } = useData();
+
   if (!currentUser) return <Navigate to="/login" />;
 
   if (requiredRole === 'super_admin') {
@@ -68,7 +71,7 @@ function AppRoutes() {
                // If authenticated but no profile loaded yet (or chooser active)
                // The Global Loader in Context usually covers this, but this is a safe fallback
                <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">
-                  Select a company...
+                   Select a company...
                </div>
              )}
            </ProtectedRoute>
@@ -89,12 +92,14 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <DataProvider> {/* DataProvider now wraps the router and handles the Modal */}
-        <Router>
-          <AppRoutes />
-        </Router>
-      </DataProvider>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <DataProvider> {/* DataProvider now wraps the router and handles the Modal */}
+          <Router>
+            <AppRoutes />
+          </Router>
+        </DataProvider>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }

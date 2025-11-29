@@ -1,9 +1,9 @@
 // src/components/CompanyAdminDashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom'; 
+import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { auth } from '../firebase/config.js';
-import { getPortalUser } from '../firebase/firestore.js'; 
+import { getPortalUser } from '../firebase/firestore.js';
 import { useToast } from './feedback/ToastProvider';
 
 // --- CUSTOM HOOKS & COMPONENTS ---
@@ -38,7 +38,7 @@ export function CompanyAdminDashboard() {
   const [userName, setUserName] = useState('Admin User');
   const [userEmail, setUserEmail] = useState('');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  
+
   const [selectedApp, setSelectedApp] = useState(null);
   const [isDriverSearchOpen, setIsDriverSearchOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -57,8 +57,8 @@ export function CompanyAdminDashboard() {
 
   const handlePhoneClick = (e, item) => {
       if(e) e.stopPropagation();
-      
-      // FIXED: Removed auto-dial logic. Now it just opens the modal.
+
+      // Open the call outcome modal
       if(item && item.phone) {
           setCallModalData({ lead: item });
       } else {
@@ -66,10 +66,22 @@ export function CompanyAdminDashboard() {
       }
   };
 
+  // Helper to get the correct TOTAL count for the currently active tab
+  // This ensures pagination bars show "Showing 20 of 1500" correctly
+  const getCurrentTotalCount = () => {
+      switch (dashboard.activeTab) {
+          case 'applications': return dashboard.counts?.applications || 0;
+          case 'find_driver': return dashboard.counts?.platformLeads || 0;
+          case 'company_leads': return dashboard.counts?.companyLeads || 0;
+          case 'my_leads': return dashboard.counts?.myLeads || 0;
+          default: return 0;
+      }
+  };
+
   return (
     <>
       <div id="company-admin-container" className="h-screen bg-gray-50 flex flex-col font-sans">
-        
+
         {/* --- HEADER --- */}
         <header className="sticky top-0 z-30 bg-white border-b border-gray-200 shrink-0 px-6 py-3 shadow-sm">
           <div className="flex justify-between items-center max-w-[1600px] mx-auto w-full">
@@ -86,10 +98,10 @@ export function CompanyAdminDashboard() {
             <div className="flex items-center gap-3">
                 {/* Only Show Import if Admin */}
                 {isCompanyAdmin && (
-                    <button 
+                     <button 
                         onClick={() => setIsUploadModalOpen(true)}
                         className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
-                    >
+                     >
                         <Upload size={16} /> Import Leads
                     </button>
                 )}
@@ -97,7 +109,7 @@ export function CompanyAdminDashboard() {
                 <button onClick={() => setIsDriverSearchOpen(true)} className="hidden sm:flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg">
                     <Search size={16} /> Search DB
                 </button>
-                
+
                 <div className="h-8 w-px bg-gray-200 mx-1"></div>
 
                 <NotificationBell userId={auth.currentUser?.uid} />
@@ -105,7 +117,7 @@ export function CompanyAdminDashboard() {
                 <div className="relative ml-2">
                     <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="flex items-center gap-2 focus:outline-none">
                         <div className="w-9 h-9 rounded-full bg-gray-100 border border-gray-200 text-gray-600 flex items-center justify-center font-bold text-sm hover:bg-gray-200 transition">
-                            {userName.charAt(0).toUpperCase()}
+                             {userName.charAt(0).toUpperCase()}
                         </div>
                     </button>
                     {isUserMenuOpen && (
@@ -128,12 +140,12 @@ export function CompanyAdminDashboard() {
         </header>
 
         <div className="flex-1 overflow-hidden flex flex-col max-w-[1600px] mx-auto w-full p-4 sm:p-6">
-        
-             {/* --- STATS ROW --- */}
+
+             {/* --- STATS ROW (UPDATED TO USE .COUNTS) --- */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6 shrink-0">
                  <StatCard 
                     title="Applications" 
-                    value={dashboard.applications.length} 
+                    value={dashboard.counts?.applications || 0} 
                     icon={<FileText size={20}/>} 
                     active={dashboard.activeTab === 'applications'}
                     colorClass="ring-blue-500 bg-blue-500"
@@ -141,7 +153,7 @@ export function CompanyAdminDashboard() {
                  />
                <StatCard 
                     title="SafeHaul Leads" 
-                    value={dashboard.platformLeads.length} 
+                    value={dashboard.counts?.platformLeads || 0} 
                     icon={<Zap size={20}/>} 
                     active={dashboard.activeTab === 'find_driver'}
                     colorClass="ring-purple-500 bg-purple-500"
@@ -149,7 +161,7 @@ export function CompanyAdminDashboard() {
                 />
                 <StatCard 
                     title="Company Leads" 
-                    value={dashboard.companyLeads.length} 
+                    value={dashboard.counts?.companyLeads || 0} 
                     icon={<Briefcase size={20}/>} 
                     active={dashboard.activeTab === 'company_leads'}
                     colorClass="ring-orange-500 bg-orange-500"
@@ -157,13 +169,13 @@ export function CompanyAdminDashboard() {
                 />
                 <StatCard 
                     title="My Leads" 
-                    value={dashboard.myLeads.length} 
+                    value={dashboard.counts?.myLeads || 0} 
                     icon={<User size={20}/>} 
                     active={dashboard.activeTab === 'my_leads'}
                     colorClass="ring-green-500 bg-green-500"
                     onClick={() => dashboard.setActiveTab('my_leads')}
                 />
-                  
+
                  {/* Leaderboard Widget */}
                  <div className="lg:col-span-1">
                      <PerformanceWidget companyId={companyId} />
@@ -172,30 +184,39 @@ export function CompanyAdminDashboard() {
 
             {/* --- MAIN CONTENT AREA --- */}
             <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-white rounded-xl shadow-sm border border-gray-200">
-                
+
                 <DashboardTable 
                     activeTab={dashboard.activeTab}
                     loading={dashboard.loading}
                     data={dashboard.paginatedData}
-                    totalCount={dashboard.filteredList.length}
+                    // UPDATED: Use the calculated total count based on the server-side stats
+                    totalCount={getCurrentTotalCount()} 
+
                     selectedId={selectedApp?.id}
-                    
                     onSelect={setSelectedApp}
                     onPhoneClick={handlePhoneClick}
-                    
+
                     searchQuery={dashboard.searchQuery}
                     setSearchQuery={dashboard.setSearchQuery}
-                    
+
                     // --- FILTERS ---
                     filters={dashboard.filters}
                     setFilters={dashboard.setFilters}
 
+                    // Passing pagination handlers from the new hook
+                    // (Note: Since we use cursor pagination, Next/Prev buttons might be replaced 
+                    // or simulated. The hook supports 'loadMore' logic primarily).
                     currentPage={dashboard.currentPage}
                     setCurrentPage={dashboard.setCurrentPage}
                     itemsPerPage={dashboard.itemsPerPage}
                     setItemsPerPage={dashboard.setItemsPerPage}
                     totalPages={dashboard.totalPages}
+
+                    // NEW: If you want to use the Load More style in the table footer, pass these:
+                    hasMore={dashboard.hasMore}
+                    onLoadMore={dashboard.loadMore}
                 />
+
             </div>
         </div>
       </div>
@@ -214,11 +235,11 @@ export function CompanyAdminDashboard() {
       )}
 
       {isDriverSearchOpen && <DriverSearchModal onClose={() => setIsDriverSearchOpen(false)} />}
-      
+
       {callModalData && <CallOutcomeModal lead={callModalData.lead} companyId={companyId} onClose={() => setCallModalData(null)} onUpdate={dashboard.refreshData} />}
-      
+
       {isUploadModalOpen && isCompanyAdmin && (
-           <CompanyBulkUpload 
+            <CompanyBulkUpload 
             companyId={companyId}
             onClose={() => setIsUploadModalOpen(false)}
             onUploadComplete={dashboard.refreshData}

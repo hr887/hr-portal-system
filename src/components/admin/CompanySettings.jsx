@@ -14,6 +14,8 @@ import { TeamManagementTab } from './settings/TeamManagementTab';
 import { EmailSettingsTab } from './settings/EmailSettingsTab';
 import { PersonalProfileTab } from './settings/PersonalProfileTab';
 import { ManageTeamModal } from '../ManageTeamModal.jsx';
+import { UnderDevelopmentAnimation } from './UnderDevelopmentAnimation';
+import { ESignatureAnimation } from './ESignatureAnimation';
 
 // --- Helper UI ---
 const SidebarItem = ({ id, label, icon: Icon, activeTab, onClick }) => (
@@ -87,26 +89,9 @@ export function CompanySettings() {
                 />
             );
         case 'integrations':
-            return (
-                <div className="space-y-8 max-w-4xl animate-in fade-in">
-                    <SectionHeader title="Integrations" subtitle="Connect with third-party services." />
-                    <div className="bg-white border border-gray-200 rounded-xl p-10 text-center text-gray-500">
-                        <Blocks size={48} className="mx-auto mb-4 opacity-20" />
-                        <p>No integrations connected yet.</p>
-                        <p className="text-sm mt-2">Tenstreet, Driver Pulse, and others coming soon.</p>
-                    </div>
-                </div>
-            );
+            return <UnderDevelopmentAnimation />;
         case 'eforms':
-            return (
-                <div className="space-y-8 max-w-4xl animate-in fade-in">
-                    <SectionHeader title="E-Signature Documents" subtitle="Manage your custom hiring documents." />
-                    <div className="bg-white border border-gray-200 rounded-xl p-10 text-center text-gray-500">
-                        <FileSignature size={48} className="mx-auto mb-4 opacity-20" />
-                        <p>Custom document management is enabled for Pro plans.</p>
-                    </div>
-                </div>
-            );
+            return <ESignatureAnimation />;
         case 'billing':
             return (
                 <div className="space-y-8 max-w-4xl animate-in fade-in">

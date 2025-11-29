@@ -5,7 +5,6 @@ import { getFieldValue } from '../helpers';
 
 export function addPageHeader(doc, companyData) {
     let y = PDF_CONFIG.MARGIN;
-    
     const name = getFieldValue(companyData?.companyName);
     const street = getFieldValue(companyData?.address?.street);
     const cityStateZip = `${getFieldValue(companyData?.address?.city)}, ${getFieldValue(companyData?.address?.state)} ${getFieldValue(companyData?.address?.zip)}`;
@@ -50,8 +49,7 @@ export function addAgreementHeader(doc, y, title, companyName = "") {
     doc.setFontSize(12);
     doc.setTextColor(0, 0, 0);
 
-    const textWidth = PDF_CONFIG.PAGE_WIDTH - PDF_CONFIG.MARGIN * 2; 
-
+    const textWidth = PDF_CONFIG.PAGE_WIDTH - PDF_CONFIG.MARGIN * 2;
     if (companyName) {
         const companyLines = doc.splitTextToSize(companyName, textWidth);
         doc.text(companyLines, PDF_CONFIG.MARGIN, y);
@@ -66,11 +64,12 @@ export function addAgreementHeader(doc, y, title, companyName = "") {
 export function addSignatureBlock(doc, y, applicantData) {
     y = checkPageBreak(doc, y, 30);
     y += PDF_CONFIG.LINE_HEIGHT * 2;
-    
+
     const sigDate = getFieldValue(applicantData['signature-date']);
-    const sigImgBase64 = applicantData.signature;
+    const signatureData = applicantData.signature; // Can be URL or "TEXT_SIGNATURE:Name"
     const name = `${getFieldValue(applicantData['firstName'])} ${getFieldValue(applicantData['lastName'])}`;
     
+    // --- Applicant Details ---
     doc.setFont(PDF_CONFIG.FONT.NORMAL, "normal");
     doc.setFontSize(10);
     
@@ -89,6 +88,7 @@ export function addSignatureBlock(doc, y, applicantData) {
         doc.text(`SSN: ***-**-${applicantData.ssn.slice(-4)}`, PDF_CONFIG.MARGIN, y);
     }
     
+    // --- Signature Section ---
     const sigDateX = PDF_CONFIG.MARGIN + 100;
     let dateY = y - (PDF_CONFIG.LINE_HEIGHT * 0.8 * (applicantData.ssn ? 4 : 3)); 
     
@@ -96,14 +96,33 @@ export function addSignatureBlock(doc, y, applicantData) {
     doc.text("Signed date:", sigDateX, dateY);
     doc.setFont(PDF_CONFIG.FONT.NORMAL, "normal");
     doc.text(sigDate, sigDateX + 25, dateY);
+    
     dateY += PDF_CONFIG.LINE_HEIGHT;
 
-    if (sigImgBase64) {
-        try {
-            doc.addImage(sigImgBase64, 'PNG', PDF_CONFIG.PAGE_WIDTH - PDF_CONFIG.MARGIN - 80, dateY, 80, 20);
-        } catch (e) {
-            console.error("Error adding signature image:", e);
-            doc.text("(Signature error)", sigDateX, dateY);
+    if (signatureData) {
+        if (signatureData.startsWith('TEXT_SIGNATURE:')) {
+            // --- NEW: Handle Typed Signature ---
+            const typedName = signatureData.replace('TEXT_SIGNATURE:', '');
+            
+            doc.setFont("times", "italic"); // Use Times Italic for formal look
+            doc.setFontSize(14);
+            // Standard legal notation for electronic signatures: /s/ Name
+            doc.text(`/s/ ${typedName}`, PDF_CONFIG.PAGE_WIDTH - PDF_CONFIG.MARGIN - 80, dateY);
+            
+            // Subtext
+            doc.setFont(PDF_CONFIG.FONT.NORMAL, "normal");
+            doc.setFontSize(8);
+            doc.text("(Digitally Signed)", PDF_CONFIG.PAGE_WIDTH - PDF_CONFIG.MARGIN - 80, dateY + 5);
+            doc.setFontSize(10); // Reset size
+
+        } else {
+            // --- OLD: Handle Image Signature ---
+            try {
+                doc.addImage(signatureData, 'PNG', PDF_CONFIG.PAGE_WIDTH - PDF_CONFIG.MARGIN - 80, dateY, 80, 20);
+            } catch (e) {
+                console.error("Error adding signature image:", e);
+                doc.text("(Signature Image Error)", sigDateX, dateY);
+            }
         }
     } else {
         doc.text("Not Signed", sigDateX, dateY);
@@ -120,7 +139,6 @@ export function addHosTable(doc, y, data) {
 
     doc.setFont(PDF_CONFIG.FONT.BOLD, "bold");
     doc.setFontSize(9);
-    
     // Header
     let currentX = tableX;
     for (let i = 1; i <= 7; i++) {
